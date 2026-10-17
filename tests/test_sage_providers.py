@@ -95,6 +95,25 @@ import sage.providers
         self.assertEqual(config.model, "main-deployment")
         self.assertNotIn(SECRET, repr(config))
 
+    def test_explicit_deepseek_configuration(self):
+        base = {"SAGE_MAIN_MODEL": "deepseek-flash", "SAGE_OPENAI_API_KEY": SECRET,
+                "SAGE_MODEL_PROVIDER": "deepseek"}
+        config = OpenAIConfig.from_env(env=base)
+        self.assertEqual(config.provider, "deepseek")
+        self.assertEqual(config.deepseek_thinking, "disabled")
+        self.assertNotIn(SECRET, repr(config))
+        enabled = OpenAIConfig.from_env(env=dict(base, SAGE_DEEPSEEK_THINKING="enabled"))
+        self.assertEqual(enabled.deepseek_thinking, "enabled")
+        for values in (dict(base, SAGE_MODEL_PROVIDER=SECRET),
+                       dict(base, SAGE_DEEPSEEK_THINKING=SECRET),
+                       dict(base, SAGE_IS_AZURE="true")):
+            with self.assertRaises(ConfigurationError) as caught:
+                OpenAIConfig.from_env(env=values)
+            self.assertNotIn(SECRET, str(caught.exception))
+        with self.assertRaises(ConfigurationError):
+            OpenAIConfig(model="deepseek-flash", api_key=SECRET, provider="deepseek",
+                         is_azure=True, endpoint="https://azure.test", api_version="version")
+
     def test_aliases_and_cheap_role(self):
         config = OpenAIConfig.from_env(role="cheap", env={"SAGE_CHEAP_MODEL": "cheap-model",
             "CHEAP_LLM_MODEL": "ignored", "SAGE_OPENAI_API_KEY": SECRET})
@@ -184,6 +203,41 @@ class ModelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.request_count, 1)
         await model.aclose()
         client.close.assert_awaited_once()
+
+    async def test_deepseek_uses_documented_bounded_wire_parameters(self):
+        for thinking in ("disabled", "enabled"):
+            client = fake_sdk_client()
+            sdk = types.SimpleNamespace(AsyncOpenAI=Mock(return_value=client), DefaultAsyncHttpxClient=Mock())
+            with patch("sage.providers.importlib.import_module", return_value=sdk):
+                model = OpenAIModel.from_env(env={"SAGE_MAIN_MODEL": "deepseek-flash",
+                    "SAGE_OPENAI_API_KEY": SECRET, "SAGE_MODEL_PROVIDER": "deepseek",
+                    "SAGE_DEEPSEEK_THINKING": thinking})
+                self.assertEqual(await model.complete("ideas", "prompt", max_tokens=123), "bounded response")
+            self.assertEqual(sdk.AsyncOpenAI.call_args.kwargs["base_url"], "https://api.deepseek.com")
+            self.assertEqual(sdk.AsyncOpenAI.call_args.kwargs["max_retries"], 0)
+            call = client.chat.completions.create.call_args.kwargs
+            self.assertEqual(call["max_tokens"], 123)
+            self.assertNotIn("max_completion_tokens", call)
+            self.assertEqual(call["extra_body"], {"thinking": {"type": thinking}})
+            self.assertNotIn(SECRET, repr(call))
+            await model.aclose()
+
+    async def test_hostname_does_not_select_deepseek_parameters(self):
+        client = fake_sdk_client()
+        model = OpenAIModel.from_env(env={"SAGE_MAIN_MODEL": "model", "OPENAI_API_KEY": SECRET,
+            "SAGE_OPENAI_BASE_URL": "https://api.deepseek.com"}, client=client)
+        await model.complete("ideas", "prompt", max_tokens=123)
+        call = client.chat.completions.create.call_args.kwargs
+        self.assertEqual(call["max_completion_tokens"], 123)
+        self.assertNotIn("max_tokens", call)
+        self.assertNotIn("extra_body", call)
+
+    async def test_deepseek_rejects_truncated_completion(self):
+        client = fake_sdk_client(reply=sdk_reply("partial", reason="length"))
+        model = OpenAIModel.from_env(env={"SAGE_MAIN_MODEL": "deepseek-flash",
+            "OPENAI_API_KEY": SECRET, "SAGE_MODEL_PROVIDER": "deepseek"}, client=client)
+        with self.assertRaises(InvalidResponse):
+            await model.complete("ideas", "prompt", max_tokens=123)
 
     async def test_azure_sdk_receives_deployment_and_explicit_configuration(self):
         client = fake_sdk_client()

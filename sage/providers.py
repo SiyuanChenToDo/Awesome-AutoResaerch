@@ -117,8 +117,16 @@ class OpenAIConfig:
     embedding_endpoint: str | None = field(default=None, repr=False)
     embedding_api_key: str | None = field(default=None, repr=False)
     embedding_api_version: str | None = None
+    provider: str = "openai"
+    deepseek_thinking: str = "disabled"
 
     def __post_init__(self) -> None:
+        if self.provider not in ("openai", "deepseek"):
+            raise ConfigurationError("SAGE_MODEL_PROVIDER must be openai or deepseek")
+        if self.deepseek_thinking not in ("enabled", "disabled"):
+            raise ConfigurationError("SAGE_DEEPSEEK_THINKING must be enabled or disabled")
+        if self.provider == "deepseek" and self.is_azure:
+            raise ConfigurationError("DeepSeek provider cannot use Azure configuration")
         if not isinstance(self.model, str) or not self.model.strip() or len(self.model) > 256:
             raise ConfigurationError("Model/deployment name must contain 1 to 256 characters")
         if not isinstance(self.is_azure, bool):
@@ -140,7 +148,11 @@ class OpenAIConfig:
         env = os.environ if env is None else env
         if role not in {"main", "cheap"}:
             raise ConfigurationError("Model role must be main or cheap")
+        provider = _setting(env, "SAGE_MODEL_PROVIDER", default="openai")
+        thinking = _setting(env, "SAGE_DEEPSEEK_THINKING", default="disabled")
         is_azure = parse_bool(_setting(env, "SAGE_IS_AZURE", "is_azure", default="false"), name="SAGE_IS_AZURE/is_azure")
+        if provider == "deepseek" and is_azure:
+            raise ConfigurationError("DeepSeek provider cannot use Azure configuration")
         model = _required(env, f"SAGE_{role.upper()}_MODEL", f"SAGE_{role.upper()}_LLM_MODEL", f"{role.upper()}_LLM_MODEL")
         if is_azure:
             key = _required(env, "SAGE_AZURE_OPENAI_KEY", "SAGE_AZURE_OPENAI_API_KEY", "AZURE_OPENAI_KEY", "AZURE_OPENAI_API_KEY")
@@ -162,7 +174,7 @@ class OpenAIConfig:
         return cls(model=model, is_azure=is_azure, api_key=key, endpoint=endpoint,
                    api_version=version, embedding_model=embedding_model,
                    embedding_endpoint=embedding_endpoint, embedding_api_key=embedding_key,
-                   embedding_api_version=embedding_version)
+                   embedding_api_version=embedding_version, provider=provider, deepseek_thinking=thinking)
 
 
 class OpenAIModel:
@@ -209,7 +221,8 @@ class OpenAIModel:
         else:
             # Explicit base_url avoids a second, unvalidated environment lookup in the SDK.
             kwargs.update(api_key=self.config.api_key,
-                          base_url=self.config.endpoint or "https://api.openai.com/v1")
+                          base_url=self.config.endpoint or ("https://api.deepseek.com"
+                              if self.config.provider == "deepseek" else "https://api.openai.com/v1"))
             factory = sdk.AsyncOpenAI
         try:
             # SDK defaults may follow redirects. Disable them so credentials and
@@ -240,11 +253,17 @@ class OpenAIModel:
             raise ConfigurationError("max_tokens must be an integer from 1 to 65536")
         client = self._get_client()
         self.request_count += 1
+        # Select the wire contract explicitly, never by guessing from the hostname.
+        # DeepSeek documents max_tokens; max_completion_tokens is not its contract.
+        output_options = ({"max_tokens": max_tokens,
+                           "extra_body": {"thinking": {"type": self.config.deepseek_thinking}}}
+                          if self.config.provider == "deepseek"
+                          else {"max_completion_tokens": max_tokens})
         try:
             reply = await asyncio.wait_for(client.chat.completions.create(
                 model=self.config.model,
                 messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=max_tokens,
+                **output_options,
                 timeout=self.timeout,
             ), timeout=self.timeout)
         except Exception as error:

@@ -57,6 +57,42 @@ OpenAI/Azure live 模型使用可选的官方 `openai` Python 包；如果选择
 
 选择支持本适配器 chat completions 与输出参数的模型。适配器实现不等于所有模型/API 版本均已验证；本次未进行真实模型调用。
 
+### DeepSeek：CPU 上的显式 live 提案验证
+
+DeepSeek 使用同一个 SDK，但必须显式设置 `SAGE_MODEL_PROVIDER=deepseek`；仅修改 URL 不会切换请求协议。默认提供方仍为 `openai`。DeepSeek 分支发送文档规定的 `max_tokens`，默认地址为 `https://api.deepseek.com`，不允许同时选择 Azure。模型 ID 仍由用户配置。
+
+截至 2026-10-17，[官方入门文档](https://api-docs.deepseek.com/)列出的模型为 `deepseek-flash` 和 `deepseek-v4-pro`；旧 `deepseek-chat` / `deepseek-reasoner` 名称已在[更新日志](https://api-docs.deepseek.com/updates/)中宣布停用。请在运行前核对账户可用模型。
+
+`SAGE_DEEPSEEK_THINKING=disabled` 为本适配器默认值，显式关闭思考以便进行有限输出预算的连通性验证，并非声称科研质量最优。可显式设为 `enabled`；需相应审查 token、超时和费用上限。两种模式都拒绝 `finish_reason=length` 的截断输出，不将其当作完整成功。参数依据：[Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)和[思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。这些本地兼容性测试不证明真实服务成功或账单上限。
+
+在可访问 DeepSeek 和 Semantic Scholar 的机器上，用户可自行运行以下 Bash 命令。Python 需要支持本仓库类型语法；API 调用不需要 GPU、CUDA 或 Docker。先确认可发送研究内容和承担 API 费用；已泄露的密钥必须先撤销，使用新密钥，切勿发送到聊天或提交到 Git。
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install openai
+export SAGE_MODEL_PROVIDER=deepseek SAGE_IS_AZURE=false
+export SAGE_OPENAI_BASE_URL=https://api.deepseek.com
+export SAGE_MAIN_MODEL=deepseek-flash SAGE_CHEAP_MODEL=deepseek-flash
+export SAGE_DEEPSEEK_THINKING=disabled
+unset SAGE_EMBEDDING_MODEL EMBEDDING_MODEL
+unset SAGE_EMBEDDING_API_ENDPOINT EMBEDDING_API_ENDPOINT
+# 用户只在自己的终端输入；关闭命令跟踪，输入不会回显或进入命令历史。
+set +x
+read -rsp 'Fresh DeepSeek API key: ' SAGE_OPENAI_API_KEY
+printf '\n'
+export SAGE_OPENAI_API_KEY
+python -m sage doctor
+python -m sage run --mode live --allow-live \
+  --discussion-mode hybrid --discussion-students 2 --discussion-rounds 1 \
+  --topic "Your approved research question" --output projects/deepseek-hybrid-01
+unset SAGE_OPENAI_API_KEY
+```
+
+每次运行使用新输出目录。`doctor` 只检查本地配置，不测试网络或账户；live 检索仍依赖 Semantic Scholar，`--articles` 不能绕开检索。默认共享预算为 120 次模型请求、60 次检索、每次 2,000 输出 token、240,000 预留输出 token、600 秒总时限；失败/重试也计入。此限制不是货币预算保证，也不保证工作流一定在限额内完成。可通过 `--config` 明确调整，经授权后再运行。
+
+上述 `run` 完成文献、CoI 学生讨论、提案和实验方案，不生成报告或执行实验。若要连到代码生成及报告/草稿，使用 `laboratory --backend dry-run --contract ...`，并提供人工审阅的标量 development MSE 契约；该路径同样不需要 Docker，但只检查代码语法，不能声称取得实验结果。真实执行的 CLI 后端需要另行审核的 Docker 配置；当前不支持任意实验或完整训练。详见[实验与报告范围](agent-laboratory-migration.md)。
+
 ### Azure 配置
 
 设置 `SAGE_IS_AZURE=true`，主/便宜模型填写对应部署名称，并提供：
