@@ -113,7 +113,9 @@ class Checkpoint:
         body = json.dumps({'data': data, 'sha256': digest(data)}, ensure_ascii=False, allow_nan=False)
         temporary = self.path.with_suffix('.pending')
         # Output directory is private and checked by CLI. No secret environment is stored.
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        if temporary.is_symlink():
+            raise ConfigurationError('Checkpoint temporary path must not be a symlink')
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0), 0o600)
         with os.fdopen(fd, 'w') as stream:
             stream.write(body)
             stream.flush()

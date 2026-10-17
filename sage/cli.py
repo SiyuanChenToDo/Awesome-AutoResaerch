@@ -13,6 +13,7 @@ from .config import RunConfig
 from .errors import SageError, ConfigurationError
 from .fixtures import FixtureModel, FixtureSource
 from .orchestration import run
+from .artifacts import ProgressArtifacts, atomic_json, atomic_text
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,7 +80,7 @@ def output_directory(path):
         raise ConfigurationError('Output path must not traverse symlinks')
     if absolute.exists():
         raise ConfigurationError('Output already exists; choose a new run directory')
-    absolute.mkdir(parents=True, exist_ok=False)
+    absolute.mkdir(parents=True, exist_ok=False, mode=0o700)
     return absolute
 
 
@@ -133,8 +134,10 @@ async def execute(args, config, articles):
 
 
 async def execute_laboratory(args, config, articles):
-    if any(getattr(args, name, False) for name in ('resume', 'cache_only_retrieval', 'allow_incomplete_novelty', 'retry_uncertain', 'retain_rejected_responses')):
-        raise ConfigurationError('Checkpoint recovery currently supports proposal run only, not laboratory execution')
+    if args.cache_only_retrieval and not args.resume:
+        raise ConfigurationError('Cache-only retrieval requires an explicit checkpoint resume')
+    if args.resume and args.backend == 'docker':
+        raise ConfigurationError('Docker execution cannot be resumed: remote execution identity and exactly-once recovery are not implemented')
     from .execution.contracts import EvaluationContract
     from .execution.fixtures import LaboratoryFixtureModel, TrustedFixtureBackend, fixture_contract
     from .orchestration.laboratory import run_laboratory
@@ -183,25 +186,45 @@ async def execute_laboratory(args, config, articles):
         source = paper_source_from_env(timeout=config.request_timeout_seconds)
         models = [model, cheap]
     destination = output_directory(args.output)
+    atomic_json(destination / 'config.json', config.to_dict())
+    atomic_json(destination / 'contract.json', __import__('dataclasses').asdict(contract))
+    from .checkpoints import Checkpoint, identity
+    from .runtime import Runtime
+    progress = ProgressArtifacts(destination)
+    run_identity = {**identity(args.topic, args.mode, config, articles, model, cheap, source),
+                    'workflow': 'laboratory', 'contract_sha256': contract.sha256,
+                    'execution_backend': args.backend, 'docker_image': args.docker_image}
+    checkpoint = Checkpoint(destination / 'checkpoint.json', run_identity, resume=args.resume)
+    runtime = Runtime(model, cheap, source, config, checkpoint=checkpoint,
+        cache_only_retrieval=args.cache_only_retrieval,
+        allow_incomplete_novelty=args.allow_incomplete_novelty,
+        retry_uncertain=args.retry_uncertain,
+        retain_rejected_responses=args.retain_rejected_responses,
+        event_sink=progress.event)
+    runtime.event('recovery.policy', 'configured', workflow='laboratory',
+                  resumed=bool(args.resume), backend=args.backend)
     try:
         result = await run_laboratory(args.topic, model, source, contract=contract, cheap_model=cheap,
             config=config, mode=args.mode, articles=articles, backend=backend,
-            allow_execution=args.allow_execution, approved_contract_digest=approved)
-        (destination / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
-        (destination / 'config.json').write_text(json.dumps(config.to_dict(), indent=2)+'\n', encoding='utf-8')
-        (destination / 'contract.json').write_text(json.dumps(__import__('dataclasses').asdict(contract), indent=2)+'\n', encoding='utf-8')
-        (destination / 'audit.jsonl').write_text(''.join(json.dumps(e)+'\n' for e in result['audit']), encoding='utf-8')
+            allow_execution=args.allow_execution, approved_contract_digest=approved,
+            runtime=runtime, on_progress=progress.snapshot)
+        atomic_json(destination / 'result.json', result)
         if result['execution']:
             candidates = destination / 'candidates'
             candidates.mkdir()
             for index, attempt in enumerate(result['execution']['attempts'], 1):
                 if attempt['code']:
-                    (candidates / f'attempt-{index}.py').write_text(attempt['code'] + '\n', encoding='utf-8')
+                    atomic_text(candidates / f'attempt-{index}.py', attempt['code'] + '\n')
         if result['report']:
-            (destination / 'report.md').write_text(result['report']['markdown'], encoding='utf-8')
+            atomic_text(destination / 'report.md', result['report']['markdown'])
             if result['report'].get('draft_markdown'):
-                (destination / 'draft.md').write_text(result['report']['draft_markdown'], encoding='utf-8')
-        print(json.dumps({'product': 'SAGE', 'status': result['status'], 'output': str(destination), 'scientific_validation': 'not_performed'}, indent=2))
+                atomic_text(destination / 'draft.md', result['report']['draft_markdown'])
+        print(json.dumps({'product': 'SAGE', 'status': result['status'], 'output': str(destination),
+            'proposal_status': result['proposal']['status'],
+            'execution_status': result['execution']['status'] if result['execution'] else None,
+            'report_status': result['report']['status'] if result['report'] else None,
+            'errors': result['errors'], 'usage': result['usage'],
+            'scientific_validation': 'not_performed'}, indent=2))
         return 0 if result['status'] in ('dry_run', 'completed_fixture', 'completed_development', 'attempt_budget_exhausted') else 1
     finally:
         for provider in models:
@@ -224,6 +247,8 @@ def main(argv=None):
     runner.add_argument('--output', type=Path, default=Path('projects/sage-run'))
     runner.add_argument('--allow-live', action='store_true')
     runner.add_argument('--config', type=Path, help='JSON RunConfig overrides; never credentials')
+    runner.add_argument('--profile', choices=('standard', 'research'), default='standard',
+                        help='Research: evidence capsules, semantic ranking, shared discussion and deeper bounded search')
     runner.add_argument('--resume', type=Path, help='Explicit matching checkpoint.json; keeps spent budgets and exact-input successful results')
     runner.add_argument('--cache-only-retrieval', action='store_true', help='Never issue new paper requests; cache misses remain unavailable')
     runner.add_argument('--allow-incomplete-novelty', action='store_true', help='Explicitly continue with unknown novelty after transient retrieval failures; never bypass missing chain evidence')
@@ -235,7 +260,7 @@ def main(argv=None):
     runner.add_argument('--discussion-mode', choices=('none', 'hybrid'), default=None, help='Optional CoI student discussion before planning')
     runner.add_argument('--discussion-students', type=int, default=None)
     runner.add_argument('--discussion-rounds', type=int, default=None)
-    runner.add_argument('--discussion-prompt-version', choices=('v1', 'v2'), default=None)
+    runner.add_argument('--discussion-prompt-version', choices=('v1', 'v2', 'v3'), default=None)
     runner.add_argument('--publication-date', default=None, help='Inclusive DateOrYear or start:end window for all retrieval')
     for command in ('catalog', 'project', 'provenance'):
         sub.add_parser(command, help=f'Compatibility commands: sage {command} --help')
@@ -249,7 +274,9 @@ def main(argv=None):
     try:
         if args.command == 'doctor':
             return doctor()
-        overrides = load_json(args.config) if args.config else {}
+        from .config import profile_overrides
+        overrides = profile_overrides(args.profile)
+        overrides.update(load_json(args.config) if args.config else {})
         for name in ('max_chain_length', 'min_chain_length', 'max_candidates', 'max_model_calls', 'max_search_calls', 'refinement_rounds', 'publication_date', 'discussion_mode', 'discussion_students', 'discussion_rounds', 'discussion_prompt_version'):
             if getattr(args, name) is not None:
                 overrides[name] = getattr(args, name)

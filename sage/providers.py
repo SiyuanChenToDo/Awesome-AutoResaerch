@@ -418,11 +418,13 @@ def _metadata_https_request(url: str, headers: Mapping[str, str], timeout: float
                             *, proxy_url: str | None = None) -> HTTPResponse:
     """Shared bounded transport; only two fixed metadata endpoints are allowed."""
     parts = urlsplit(url)
+    article_endpoint = (parts.netloc == 'arxiv.org' and not parts.query and
+                        re.fullmatch(r'/(?:html|pdf)/(?:\d{4}\.\d{4,5}|[a-zA-Z][a-zA-Z.\-]+/\d{7})(?:v[1-9]\d*)?', parts.path))
     allowed = ((parts.netloc == "api.semanticscholar.org" and parts.path.startswith("/graph/v1/"))
-               or (parts.netloc == "export.arxiv.org" and parts.path == "/api/query"))
+               or (parts.netloc == "export.arxiv.org" and parts.path == "/api/query") or article_endpoint)
     if parts.scheme != "https" or not allowed or parts.fragment:
         raise ConfigurationError("Unapproved paper metadata endpoint")
-    if parts.netloc == "export.arxiv.org" and any(k.lower() not in {"accept", "user-agent"} for k in headers):
+    if parts.netloc in ("export.arxiv.org", "arxiv.org") and any(k.lower() not in {"accept", "user-agent"} for k in headers):
         raise ConfigurationError("arXiv metadata transport does not accept credential headers")
     deadline = time.monotonic() + timeout
     proxy_url = _proxy_url(proxy_url)
@@ -660,4 +662,7 @@ def paper_source_from_env(*, env=None, **kwargs):
     if provider == "arxiv":
         from .arxiv import ArxivSource
         return ArxivSource.from_env(env=env, **kwargs)
-    raise ConfigurationError("SAGE_PAPER_PROVIDER must be semantic_scholar or arxiv")
+    if provider == 'arxiv_graph':
+        from .graph_source import ArxivGraphSource
+        return ArxivGraphSource.from_env(env=env, **kwargs)
+    raise ConfigurationError("SAGE_PAPER_PROVIDER must be semantic_scholar, arxiv or arxiv_graph")

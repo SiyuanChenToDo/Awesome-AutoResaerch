@@ -265,7 +265,7 @@ arXiv API 不提供 citation/reference graph：此选择显式改用 `Chain.rela
 
 ## 可审计检查点与有界恢复
 
-`run` 现在在新输出目录写 `checkpoint.json`。成功的结构化模型回复和检索记录按精确输入缓存；模型定稿已成功、随后 novelty 失败时，定稿仍可恢复。缓存身份包括格式版本、自有 Python 源码哈希、主题/模式/本地 article/配置哈希和非秘密提供方配置哈希。模型凭据、代理 URL、环境变量不写入。缓存包含研究内容，按私有文件保管。
+`run` 与 `laboratory` 在新输出目录写 `checkpoint.json`。成功的结构化模型回复和检索记录按精确输入缓存；模型定稿已成功、随后 novelty 失败时，定稿仍可恢复。缓存身份包括格式版本、自有 Python 源码哈希、主题/模式/本地 article/配置哈希和非秘密提供方配置哈希。laboratory 另绑定工作流、完整评价合同摘要、执行后端与镜像，防止把另一份合同或后端的缓存当成当前批准。模型凭据、代理 URL、环境变量不写入。缓存包含研究内容，按私有文件保管。
 
 在**同一代码、主题、配置及提供方身份**下，选择新输出目录：
 
@@ -282,7 +282,29 @@ live 仍必须显式 `--mode live --allow-live`。`--cache-only-retrieval` 禁�
 
 累计模型/检索请求、预留 token、SDK 实际 token（若提供方返回）、先前审计和活跃运行时长一起恢复，失败不归零。活跃时长不包含进程之间的离线等待。先前成功回复重放时重新执行当前验证器；缓存没有给来源增加权限。含未完成 `pending` 请求的检查点默认拒绝重发，只有显式 `--retry-uncertain` 允许另一次计费尝试；远端完成而本地未写入的窗口无法提供 exactly-once 保证。文件哈希是误改检测，不是签名、防篡改存储或安全沙箱。
 
-本入口只支持 `run`。`laboratory` 明确拒绝这些恢复参数，避免把执行副作用当作可安全重放的模型/检索请求。旧运行目录的 result.json 或临时恢复脚本不是此检查点格式，不能直接导入。源码/配置改变会拒绝重放，不自动把旧内容升级为新版本有效证据。
+`laboratory` 的 dry-run 和内置 fixture 后端支持相同恢复参数。fixture 重新计算的只是固定、无外部副作用的合成预测；恢复不会重新执行任意生成代码。Docker 后端仍明确拒绝 `--resume`，因为尚未实现容器任务身份与执行副作用恢复。旧运行目录的 result.json 或临时恢复脚本不是此检查点格式，不能直接导入。源码/配置改变会拒绝重放，不自动把旧内容升级为新版本有效证据。
+
+例如，先前以相同默认主题、配置和后端运行过 hybrid fixture，可在新目录继续：
+
+```bash
+python -m sage laboratory --mode offline --backend fixture --allow-execution \
+  --discussion-mode hybrid --resume projects/lab-before/checkpoint.json \
+  --output projects/lab-after
+```
+
+laboratory 运行时逐事件刷新 `audit.jsonl`，逐阶段更新 `result.partial.json`，并提前保存 `config.json`、`contract.json`。即使进程在写作中突然退出，已完成的执行尝试、章节和调用缓存仍可检查。`result.partial.json` 表示部分状态；最终 `result.json` 仅在控制器正常结束后写入。CLI 同时打印提案、执行和报告状态及有阶段信息的错误，不把 `proposal_failed` 和空错误列表作为唯一诊断。
+
+写作模型接收稳定的语义视图：最终提案、来源提取、负面筛查与已采纳要求；重复证据按 ID/哈希归并。调用日志、token 账单与恢复事件留在制品中，不反复拼入每个章节请求，避免重放日志变化使成功缓存失效或撑满提示词上限。
+
+讨论上下文协议为 `sage.discussion.context.v2`。互评者保留自己的完整证据，但对方仅提供当前提案和来源身份；来源可见性不会扩大引用权限。修订阶段只补充有条件可采纳及先前已采纳意见涉及的同伴证据。综合和写作阶段保留完整原始来源文本、当前提案、负面筛查摘要与明确要求，省去重复的模型生成解读；每张卡用 `view_scope` 标明已提供的范围，用摘要关联完整提取。完整来源解读、实验描述与旧版本仍在运行制品中，实验设计模块继续接收原始证据提取；不得把提示中省略的解释当作已经读过的事实。
+
+讨论提示使用标准 JSON Schema 明确每个字段的实际类型：ID 集合必须是唯一字符串数组，空集合写 `[]`；`requirements` 必须是对象数组，每个对象含 `critique_id` 和 `requirement`。单个字符串、字符串数组代替规划对象、null 或缺字段仍被拒绝，不做自动类型转换。此声明只改善模型的输出契约，不能替代后续来源归属、采纳关系与逐字要求的严格校验。
+
+代码生成与修复提示给出解析器实际接受的完整命令示例：开围栏是 `REPLACE` 或 `EDIT N M`，不能在 `python` 围栏外另放一个 REPLACE。解析失败时，修复器同时接收被拒命令、明确格式诊断和冻结合同；不会因为尚未产生可解析代码就丢掉原始程序。解析器仍严格拒绝多条命令、错误索引和嵌套围栏，所有失败照常消耗尝试额度。
+
+报告各节先生成一个不超过 1400 字符的简洁段落；越界回复会被拒绝并获得有界反馈，不自动截断。逐节请求只带章节状态和引用 ID 的提纲，不反复复制此前全部段落；完整草稿仍进入后续评审与修订。此约束限制写作链的上下文增长，并不把模型评论升级成已验证论文。
+
+发现阶段先对候选锚点进行主题相关性筛查，拒绝的条目会记录；短证据链可以由预算内的备用锚点替换。hybrid 在锚点数量不足时提前停止，生成后也会检查有效候选数量，避免先支付构思和两两比较成本才发现无法组成讨论角色。arXiv 查询提示明确要求 2–4 个主题关键词；检索与相关性仍需实际来源支持，不降低最短证据链要求。
 
 ## 讨论上下文与规划输出
 
@@ -299,3 +321,11 @@ live 仍必须显式 `--mode live --allow-live`。`--cache-only-retrieval` 禁�
 在原 retry_attempts 内，下一次请求可附加 `field_feedback_v1`，只包含程序自有规则说明，不包含被拒绝的回复，也不自动修改结果、放宽来源权限或强制采纳。每次实际请求哈希和预算仍记录；重复违反会按原上限失败。修订提示另区分无条件可引用来源和“只有明确采纳该 supported 意见后才可引用”的来源表；peer 内容可见不等于被授权引用。
 
 默认只记录安全诊断。显式 `--retain-rejected-responses` 才将大小受限的失败请求/回复保存在私有 checkpoint.rejections，权限 0600，带 stage/attempt/请求与响应哈希、代码身份和诊断；它们是未通过校验的不可信研究内容，不参与成功缓存，不能直接发布为脱敏日志。审计本身仍没有原文。没有 checkpoint 或回复超限时不会保存原文；标记 raw_retained_in_private_checkpoint=false。这些记录不能补回此前未保存的真实失败回复。
+# Research ideation upgrade (2026-10-18)
+
+For the recommended evidence-card input, semantic ranking, shared v3 discussion,
+bounded empty-query relaxation and optional real citation graph, see the
+[research ideation guide](ideation-evidence.md). Use `--profile research` on the
+proposal-only `run` entry. This explicitly opts into official paper-text retrieval;
+the existing standard profile remains compatible. No scientific quality gain is
+implied by the profile or by software regression results.

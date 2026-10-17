@@ -35,7 +35,8 @@ def respond(stage, prompt):
         selected = max(range(len(payload['students'])), key=lambda i: (len(payload['students'][i]['accepted_critique_ids']), -i))
         accepted = payload['students'][selected]['accepted_critique_ids']
         value = {'selected_index': selected, 'accepted_critique_ids': accepted,
-                 'requirements': [{'critique_id': c['critique_id'], 'requirement': c['requested_change']}
+                 'requirements': [] if payload.get('canonical_controls_managed') else
+                                 [{'critique_id': c['critique_id'], 'requirement': c['requested_change']}
                                   for c in payload['critiques'] if c['critique_id'] in accepted],
                  'rationale': 'Fixture policy favors explicitly adopted source-scoped controls, with stable tie breaking.',
                  'uncertainty': 'Fixture selection demonstrates wiring only, not superior scientific quality.'}

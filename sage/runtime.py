@@ -35,7 +35,7 @@ def string_list(value: str, limit: int) -> list[str]:
 
 
 class Runtime:
-    def __init__(self, main_model, cheap_model, source, config: RunConfig, *, clock=time.monotonic, checkpoint=None, cache_only_retrieval=False, allow_incomplete_novelty=False, retry_uncertain=False, retain_rejected_responses=False):
+    def __init__(self, main_model, cheap_model, source, config: RunConfig, *, clock=time.monotonic, checkpoint=None, cache_only_retrieval=False, allow_incomplete_novelty=False, retry_uncertain=False, retain_rejected_responses=False, event_sink=None):
         self.main_model = main_model
         self.cheap_model = cheap_model
         self.source = source
@@ -48,6 +48,7 @@ class Runtime:
         self.allow_incomplete_novelty = allow_incomplete_novelty
         self.retry_uncertain = retry_uncertain
         self.retain_rejected_responses = retain_rejected_responses
+        self.event_sink = event_sink
         self.audit: list[dict] = []
         self.usage = {'model_calls': 0, 'search_calls': 0, 'reserved_output_tokens': 0,
                       'budget_basis': 'requests_and_maximum_output_tokens; not a currency cost estimate'}
@@ -64,6 +65,8 @@ class Runtime:
     def event(self, stage: str, status: str, **fields):
         self.audit.append({'sequence': len(self.audit) + 1, 'stage': stage, 'status': status, **fields})
         self.persist()
+        if self.event_sink is not None:
+            self.event_sink(self, self.audit[-1])
 
     def remaining(self):
         return self.config.max_wall_seconds - self.elapsed_before - (self.clock() - self.started)

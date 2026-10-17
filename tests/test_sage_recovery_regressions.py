@@ -70,7 +70,12 @@ class ContextRegressions(unittest.TestCase):
         self.assertEqual(compact['critiques'], payload['critiques'])
         self.assertEqual(compact['candidates'][0]['idea'], candidates[0]['idea'])
         ref = compact['candidates'][0]['chain']['evidence'][0]['evidence_ref']
-        self.assertEqual(compact['evidence_registry'][ref], candidates[0]['chain']['evidence'][0])
+        card = compact['evidence_registry'][ref]
+        original_card = candidates[0]['chain']['evidence'][0]
+        self.assertEqual(card['paper'], original_card['paper'])
+        self.assertEqual(card['full_evidence_sha256'], digest(original_card))
+        self.assertNotIn('experiment', card)
+        self.assertNotIn('idea', card)
         self.assertEqual(compact['students'][0]['accepted_critique_ids'], ['accepted-0'])
         self.assertEqual(compact['students'][0]['history_sha256'], digest(students[0]))
 

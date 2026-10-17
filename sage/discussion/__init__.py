@@ -51,23 +51,46 @@ def evidence_ids(value, allowed, *, required=True):
 REVISION_SCHEMA = {'idea': 'text', 'evidence_ids': 'ids', 'accepted_critique_ids': 'ids',
                    'rejected_critique_ids': 'ids', 'rationale': 'text', 'uncertainty': 'text'}
 
-def validate_revision(v, *, original_idea, own_evidence_ids, targeted, prior):
+def validate_revision(v, *, original_idea, own_evidence_ids, targeted, prior,
+                      shared_evidence_ids=None, allow_methodological=False, canonical_controls=False):
     """Pure replayable validator. Never rewrites returned values."""
     fields(v, REVISION_SCHEMA)
-    allowed = {c['critique_id']: c for c in targeted if c['status'] == 'supported'}
-    accepted, rejected = set(v['accepted_critique_ids']), set(v['rejected_critique_ids'])
+    allowed = {c['critique_id']: c for c in targeted if c['status'] == 'supported' or
+               (allow_methodological and c['status'] == 'methodological')}
+    reported_accepted, rejected = set(v['accepted_critique_ids']), set(v['rejected_critique_ids'])
+    # v3 accepts either current-round or cumulative approved IDs. Previously
+    # approved IDs never become new decisions, and cannot be silently revoked.
+    accepted = reported_accepted - set(prior) if canonical_controls else reported_accepted
+    if canonical_controls and not reported_accepted <= set(allowed) | set(prior):
+        raise ValidationError('revision_decisions', 'accepted_critique_ids')
     if not accepted <= set(allowed) or accepted & rejected or accepted | rejected != {c['critique_id'] for c in targeted}:
         raise ValidationError('revision_decisions', 'accepted_critique_ids')
     adopted = {**prior, **{k: allowed[k] for k in accepted}}
-    evidence_ids(v['evidence_ids'], set(own_evidence_ids) | {e for c in adopted.values() for e in c['evidence_ids']})
-    if not accepted and v['idea'] != original_idea:
+    evidence_ids(v['evidence_ids'], set(shared_evidence_ids if shared_evidence_ids is not None else own_evidence_ids) |
+                 {e for c in adopted.values() for e in c['evidence_ids']})
+    if not accepted and v['idea'] != original_idea and not (canonical_controls and v['idea'] == 'UNCHANGED'):
         raise ValidationError('unchanged_idea', 'idea')
-    if accepted and v['idea'] == original_idea:
+    if accepted and (v['idea'] == original_idea or (canonical_controls and v['idea'] == 'UNCHANGED')):
         raise ValidationError('changed_idea', 'idea')
-    if any(c['requested_change'] not in v['idea'] for c in adopted.values()):
+    if not canonical_controls and any(c['requested_change'] not in v['idea'] for c in adopted.values()):
         raise ValidationError('verbatim_requirement', 'idea')
-    if any(not set(c['evidence_ids']) <= set(v['evidence_ids']) for c in adopted.values()):
+    if not canonical_controls and any(not set(c['evidence_ids']) <= set(v['evidence_ids']) for c in adopted.values()):
         raise ValidationError('retained_evidence', 'evidence_ids')
+
+
+def publish_controls(proposal_text, controls):
+    """Attach only explicitly adopted, ledger-owned requirements, exactly once.
+
+    The model edits narrative; it cannot add/remove the authoritative control set.
+    This preserves exact requirements without demanding long verbatim model copies.
+    """
+    marker = '\n\n[SAGE_ACCEPTED_CONTROLS]'
+    narrative = proposal_text.split(marker, 1)[0]
+    if not controls:
+        return narrative
+    return narrative + marker + '\n' + '\n'.join(
+        '[' + c['critique_id'] + '] ' + c['requested_change'] for c in controls
+    ) + '\n[/SAGE_ACCEPTED_CONTROLS]'
 
 
 class Discussion:
@@ -85,7 +108,7 @@ class Discussion:
                            input_sha256=hashlib.sha256(text.encode()).hexdigest(), round=payload.get('round', 0),
                            student_id=payload.get('student_id'), prompt_chars=len(text),
                            original_payload_chars=len(json.dumps(payload, ensure_ascii=False)),
-                           context_protocol='sage.discussion.context.v1')
+                           context_protocol='sage.discussion.context.v2')
         self.ledger['prompt_history'].append({'stage': stage, 'version': version, 'template_sha256': digest,
             'input_sha256': hashlib.sha256(text.encode()).hexdigest(),
             'round': payload.get('round', 0), 'student_id': payload.get('student_id'),
@@ -104,6 +127,19 @@ class Discussion:
         portfolios = [{e.paper.paper_id for e in c.chain.evidence} for c in candidates]
         if any(not (p - set().union(*(q for j, q in enumerate(portfolios) if j != i))) for i, p in enumerate(portfolios)):
             raise NoEvidence('Each hybrid student needs at least one exclusive source; duplicated portfolios are insufficient')
+        shared = self.runtime.config.discussion_prompt_version == 'v3'
+        evidence_library = {e.paper.paper_id: e for c in candidates for e in c.chain.evidence}
+        if shared:
+            evidence_library.update(getattr(self.runtime, 'evidence_cards', {}))
+        shared_evidence = [asdict(e) for e in evidence_library.values()]
+        shared_ids = {e['paper']['paper_id'] for e in shared_evidence}
+        source_owners = {identity: [f'phd-{i+1}' for i, portfolio in enumerate(portfolios) if identity in portfolio]
+                         for identity in shared_ids}
+        source_owners = {identity: owners or ['supplemental_literature_review'] for identity, owners in source_owners.items()}
+        extra = {'shared_evidence': shared_evidence, 'source_owners': source_owners,
+                 'canonical_controls_managed': True} if shared else {}
+        if shared:
+            self.ledger['shared_source_owners'] = source_owners
         for i, candidate in enumerate(candidates):
             student = {'student_id': f'phd-{i+1}', 'role': ROLES[i], 'candidate_index': i,
                        'evidence_ids': sorted(portfolios[i]), 'original_candidate': deepcopy(asdict(candidate)),
@@ -114,6 +150,8 @@ class Discussion:
             value = await self.ask('develop', payload, {'idea': 'text', 'evidence_ids': 'ids', 'rationale': 'text', 'uncertainty': 'text'},
                                    lambda v: evidence_ids(v['evidence_ids'], portfolios[i]))
             student['development'] = value
+            if shared:
+                student['proposal_text'] = value['idea']
             candidate.idea = value['idea']
             candidate.novelty = NoveltyAssessment('not_established', [], [], 'Discussion changed proposal; novelty has not been rechecked.')
         for number in range(1, self.runtime.config.discussion_rounds + 1):
@@ -127,10 +165,11 @@ class Discussion:
                 payload = {'round': number, 'student_id': student['student_id'], 'role': student['role'],
                            'own_candidate': snapshots[i], 'evidence_ids': student['evidence_ids'],
                            'target_id': critique['target_id'], 'target_candidate': snapshots[target]}
+                payload.update(extra)
                 def validate(v):
-                    if v['status'] not in ('supported', 'unknown'):
+                    if v['status'] not in (('supported', 'methodological', 'unknown') if shared else ('supported', 'unknown')):
                         raise ValidationError('critique_status', 'status')
-                    evidence_ids(v['evidence_ids'], student['evidence_ids'], required=v['status'] == 'supported')
+                    evidence_ids(v['evidence_ids'], shared_ids if shared else student['evidence_ids'], required=v['status'] == 'supported')
                 try:
                     value = await self.ask('critique', payload, {'status': 'text', 'evidence_ids': 'ids', 'issue': 'text',
                         'requested_change': 'text', 'support': 'text', 'uncertainty': 'text'}, validate)
@@ -144,30 +183,50 @@ class Discussion:
                 current.append(critique)
             for i, student in enumerate(self.ledger['students']):
                 targeted = [c for c in current if c['target_id'] == student['student_id']]
-                allowed = {c['critique_id']: c for c in targeted if c['status'] == 'supported'}
+                allowed = {c['critique_id']: c for c in targeted if c['status'] == 'supported' or
+                           (shared and c['status'] == 'methodological')}
                 prior = {c['critique_id']: c for c in self.ledger['critiques'] if c['critique_id'] in student['accepted_critique_ids']}
                 available = set(student['evidence_ids']) | {e for c in [*allowed.values(), *prior.values()] for e in c['evidence_ids']}
                 payload = {'round': number, 'student_id': student['student_id'], 'candidate': snapshots[i],
                            'critiques': targeted, 'prior_accepted_critiques': list(prior.values()), 'evidence_ids': sorted(available),
                            'peer_evidence': [snapshots[j]['chain']['evidence'] for j in range(count) if j != i]}
+                payload.update(extra)
+                if shared:
+                    payload['proposal_text'] = student['proposal_text']
                 def validate(v):
-                    validate_revision(v, original_idea=candidates[i].idea,
-                                      own_evidence_ids=student['evidence_ids'], targeted=targeted, prior=prior)
+                    validate_revision(v, original_idea=student['proposal_text'] if shared else candidates[i].idea,
+                                      own_evidence_ids=student['evidence_ids'], targeted=targeted, prior=prior,
+                                      shared_evidence_ids=shared_ids if shared else None, allow_methodological=shared,
+                                      canonical_controls=shared)
                 value = await self.ask('revise', payload, REVISION_SCHEMA, validate)
                 student['revisions'].append({'round': number, 'previous_idea': candidates[i].idea, **value})
-                student['accepted_critique_ids'].extend(value['accepted_critique_ids'])
-                candidates[i].idea = value['idea']
+                student['accepted_critique_ids'].extend(c for c in value['accepted_critique_ids'] if c not in student['accepted_critique_ids'])
+                if shared:
+                    if value['idea'] != 'UNCHANGED':
+                        student['proposal_text'] = value['idea']
+                    adopted = [c for c in self.ledger['critiques'] if c['critique_id'] in student['accepted_critique_ids']]
+                    candidates[i].idea = publish_controls(student['proposal_text'], adopted)
+                    student['revisions'][-1]['published_idea'] = candidates[i].idea
+                    student['revisions'][-1]['published_evidence_ids'] = sorted(set(value['evidence_ids']) |
+                        {identity for c in adopted for identity in c['evidence_ids']})
+                else:
+                    candidates[i].idea = value['idea']
         # Recheck revised ideas without claiming that initial novelty assessments carry over.
         for candidate in candidates:
             candidate.novelty = await review.novelty(candidate.idea, topic)
         payload = {'topic': topic, 'students': self.ledger['students'], 'candidates': [asdict(c) for c in candidates],
                    'critiques': self.ledger['critiques']}
+        payload.update(extra)
         def validate(v):
             if not 0 <= v['selected_index'] < count:
                 raise ValidationError('selection_range', 'selected_index')
             accepted = self.ledger['students'][v['selected_index']]['accepted_critique_ids']
             if set(v['accepted_critique_ids']) != set(accepted):
                 raise ValidationError('accepted_critique_set', 'accepted_critique_ids')
+            if shared:
+                if v['requirements']:
+                    raise ValidationError('canonical_requirements_managed', 'requirements')
+                return
             seen = []
             for requirement in v['requirements']:
                 if not isinstance(requirement, dict):
@@ -181,16 +240,22 @@ class Discussion:
                 raise ValidationError('requirements_coverage', 'requirements')
         value = await self.ask('synthesize', payload, {'selected_index': 'index', 'rationale': 'text',
                       'accepted_critique_ids': 'ids', 'requirements': 'requirements', 'uncertainty': 'text'}, validate)
+        if shared:
+            value['requirements'] = [{'critique_id':c['critique_id'],'requirement':c['requested_change']}
+                                    for c in self.ledger['critiques'] if c['critique_id'] in value['accepted_critique_ids']]
         self.ledger['synthesis'] = value
-        sources = {student['student_id']: {e.paper.paper_id: {'paper': paper_record(e.paper), 'idea': e.idea,
-                    'experiment': e.experiment, 'entities': e.entities} for e in candidates[student['candidate_index']].chain.evidence}
+        all_sources = {e.paper.paper_id: {'paper': paper_record(e.paper), 'idea': e.idea,
+                      'experiment': e.experiment, 'entities': e.entities, 'capsule': e.capsule}
+                       for e in evidence_library.values()}
+        sources = {student['student_id']: (all_sources if shared else {e.paper.paper_id: {'paper': paper_record(e.paper), 'idea': e.idea,
+                    'experiment': e.experiment, 'entities': e.entities} for e in candidates[student['candidate_index']].chain.evidence})
                    for student in self.ledger['students']}
         self.ledger['plan_handoff'] = {'candidate_index': value['selected_index'],
             'accepted_critique_ids': value['accepted_critique_ids'], 'requirements': value['requirements'],
             'source_map': {c['critique_id']: {'author_id': c['author_id'], 'evidence_ids': c['evidence_ids'],
                                                 'evidence': [sources[c['author_id']][e] for e in c['evidence_ids']]}
                            for c in self.ledger['critiques'] if c['critique_id'] in value['accepted_critique_ids']}}
-        self.ledger['status'] = 'completed_with_uncertainty' if any(c['status'] != 'supported' for c in self.ledger['critiques']) else 'completed'
+        self.ledger['status'] = 'completed_with_uncertainty' if any(c['status'] in ('unknown','failed') for c in self.ledger['critiques']) else 'completed'
         return value['selected_index']
 
     def bind_plan(self, plan):

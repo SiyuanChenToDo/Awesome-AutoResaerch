@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import date
@@ -229,9 +230,20 @@ def validate_catalog(root: Path):
     return errors
 
 
+def repository_files(root: Path, pattern: str):
+    """Walk owned files without descending into local environments or run data."""
+    excluded = {'.git', '.venv', 'venv', '__pycache__', '.pytest_cache', 'node_modules', 'projects', 'outputs'}
+    for directory, names, files in os.walk(root, followlinks=False):
+        names[:] = sorted(name for name in names if name not in excluded)
+        for name in sorted(files):
+            path = Path(directory) / name
+            if path.match(pattern):
+                yield path
+
+
 def check_links(root: Path):
     errors = []
-    for path in root.rglob("*.md"):
+    for path in repository_files(root, '*.md'):
         relative = path.relative_to(root)
         if relative.parts[0] in {"sources", "projects", ".git"}:
             continue  # Immutable source missing attachments are reported separately.

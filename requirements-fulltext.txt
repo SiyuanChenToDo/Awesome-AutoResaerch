@@ -1,0 +1,2 @@
+# Optional official-paper PDF text extraction; HTML needs only the standard library.
+pypdf>=6,<7

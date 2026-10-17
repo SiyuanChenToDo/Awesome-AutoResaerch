@@ -43,8 +43,8 @@ _VALIDATION_RULES = {
     'unique_ids': 'This field must be a JSON array of unique, nonempty string IDs.',
     'integer_index': 'Return an integer index.',
     'list_required': 'Return a JSON list for this field.',
-    'source_ownership': 'Use only the authorized source IDs for this role and accepted critiques; visibility is not permission.',
-    'critique_status': 'Critique status must be exactly supported or unknown.',
+    'source_ownership': 'Use only IDs authorized by citable_source_ids in this task; do not invent IDs.',
+    'critique_status': 'Use an allowed critique status: supported/unknown, or methodological when v3 permits it.',
     'revision_decisions': 'Decide every incoming critique exactly once; never accept unknown or failed critiques.',
     'unchanged_idea': 'With no accepted new critique, copy candidate.idea exactly, without paraphrasing or formatting changes.',
     'changed_idea': 'Accepting a critique requires a changed idea.',
@@ -57,11 +57,15 @@ _VALIDATION_RULES = {
     'requirements_coverage': 'Include exactly one planning requirement per accepted critique.',
     'required_tag': 'Return exactly one nonempty required output tag.',
     'unspecified': 'Output failed validation; follow the original contract without inventing a diagnosis.',
+    'bounded_commentary': 'Return one concise qualitative paragraph within 1400 characters; preserve uncertainty and do not invent facts to fit.',
+    'bounded_ranking_reason': 'Each ranking reason must be at most 180 characters; preserve all supplied IDs and numeric scores.',
+    'source_excerpt': 'Copy a contiguous 15-280 character quote only from INPUT_CHUNK, not from metadata or another chunk. Keep claims <=350 characters and the exact supplied chunk_id; omit unsupported claims.',
+    'canonical_requirements_managed': 'Return requirements=[] in v3. The controller attaches exact approved requirements from selected accepted_critique_ids.',
 }
-_VALIDATION_FIELDS = frozenset(('$', 'discussion', 'experiment', 'plan_contract', 'idea',
+_VALIDATION_FIELDS = frozenset(('$', 'discussion', 'experiment', 'plan_contract', 'idea', 'commentary',
     'status', 'evidence_ids', 'accepted_critique_ids', 'rejected_critique_ids', 'selected_index',
     'requirements', 'critique_id', 'requirement', 'rationale', 'uncertainty', 'issue',
-    'requested_change', 'support'))
+    'requested_change', 'support', 'reason', 'quote'))
 
 
 class ValidationError(InvalidResponse):

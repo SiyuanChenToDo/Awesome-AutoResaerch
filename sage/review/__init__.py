@@ -21,17 +21,27 @@ class Review:
         queries, papers = [], []
         try:
             limit = self.runtime.config.max_queries
-            response = await self.runtime.ask('review.novelty_queries', get_deep_check_idea_novel_search_query_prompt(idea, topic),
+            response = await self.runtime.ask('review.novelty_queries', get_deep_check_idea_novel_search_query_prompt(idea, topic) +
+                                               '\n' + getattr(self.runtime.source, 'query_instructions', '') +
+                                               '\nSearch problem, mechanism and closest prior methods in separate short queries; do not join all controls into one query.',
                                               ('queries',), validate=lambda r: string_list(r['queries'], limit))
-            queries = string_list(response['queries'], limit)
+            initial_queries = string_list(response['queries'], limit)
+            queries = []
             seen = set()
-            for query in queries:
-                found = await self.discovery.search(query, limit=5, exclude=seen)
+            for query in initial_queries:
+                if self.runtime.config.novelty_search_rewrites:
+                    found, attempted = await self.discovery.search_expanded(query, limit=5, exclude=seen)
+                    queries.extend(attempted)
+                else:
+                    found = await self.discovery.search(query, limit=5, exclude=seen)
+                    queries.append(query)
                 papers.extend(found)
                 seen.update(x for p in found for x in (p.paper_id, p.title.casefold()))
             if not papers:
                 self.runtime.event('review.novelty', 'not_established', reason='empty_retrieval')
                 return NoveltyAssessment('not_established', queries, [], 'No comparison evidence was retrieved; novelty is unknown.')
+            if self.runtime.config.evidence_mode == 'capsule':
+                return await self.compare_nearest(idea, papers, queries)
             def validate(response):
                 if response['similar'] not in ('0', '1'):
                     raise InvalidResponse('Similarity must be 0 or 1')
@@ -58,6 +68,67 @@ class Review:
         except InvalidResponse:
             self.runtime.event('review.novelty', 'not_established', reason='invalid_model_output')
             return NoveltyAssessment('not_established', queries, papers, 'Invalid model screening output; novelty is unknown.')
+
+    async def compare_nearest(self, idea, papers, queries):
+        """Explicit overlap/difference ledger; abstract screening is never a novelty proof."""
+        import json
+        retrieved_ids = {p.paper_id for p in papers}
+        # The candidate may legitimately cite its seed literature. Supply those
+        # exact known cards too, rather than asking the model to compare them and
+        # then rejecting their IDs merely because this search did not return them.
+        known = getattr(self.runtime, 'evidence_cards', {})
+        input_papers = [e.paper for identity,e in known.items() if identity in idea and identity not in retrieved_ids]
+        papers = list(papers) + input_papers
+        self.runtime.event('review.comparison_corpus','assembled',
+                           retrieved_ids=sorted(retrieved_ids), input_evidence_ids=[p.paper_id for p in input_papers])
+        allowed = {p.paper_id for p in papers}
+        def validate(r):
+            try:
+                value = json.loads(r['comparison'])
+                if set(value) != {'verdict','closest_paper_id','comparisons','uncertainty'}:
+                    raise ValueError
+                if value['verdict'] not in ('overlap','distinct_within_retrieved','insufficient_evidence'):
+                    raise ValueError
+                if value['closest_paper_id'] not in allowed or not isinstance(value['uncertainty'], str):
+                    raise ValueError
+                rows = value['comparisons']
+                if not isinstance(rows, list) or not 1 <= len(rows) <= 5:
+                    raise ValueError
+                if len({x['paper_id'] for x in rows}) != len(rows):
+                    raise ValueError
+                for row in rows:
+                    if set(row) != {'paper_id','shared_problem','shared_mechanism','difference','evidence_limit'} or row['paper_id'] not in allowed:
+                        raise ValueError
+                    if any(not isinstance(v, str) or not 1 <= len(v) <= 1000 for v in row.values()):
+                        raise ValueError
+            except (ValueError, TypeError, KeyError):
+                raise InvalidResponse('Nearest-work comparison requires valid supplied IDs and explicit differences') from None
+        from ..literature import Literature
+        literature = Literature(self.runtime, self.discovery)
+        for paper in papers[:self.runtime.config.novelty_fulltext_papers]:
+            if paper.paper_id not in self.runtime.evidence_cards:
+                await literature.extract(paper, 'Closest prior work to proposed idea: ' + idea[:2000])
+        records = [{'paper_id':p.paper_id,'title':p.title,'abstract':p.abstract,'scope':p.evidence_scope,
+                    'acquisition_basis':'retrieved_this_screen' if p.paper_id in retrieved_ids else 'existing_read_input_evidence',
+                    'capsule': self.runtime.evidence_cards[p.paper_id].capsule
+                    if p.paper_id in self.runtime.evidence_cards else None} for p in papers]
+        response = await self.runtime.ask('review.nearest_work',
+            'Compare this proposed idea with its closest retrieved prior work. Do not confuse new wording or '
+            'extra controls with a new mechanism. Compare problem, mechanism and claimed contribution. '
+            'Obey each source scope: a supplied capsule may include article text; other records are abstract-only. Absence of a detail in an abstract '
+            'does not establish that the full paper lacks it; use insufficient_evidence when needed. '
+            'Return <comparison>{"verdict":"overlap|distinct_within_retrieved|insufficient_evidence",'
+            '"closest_paper_id":"supplied ID","comparisons":[{"paper_id":"supplied ID",'
+            '"shared_problem":"...","shared_mechanism":"...","difference":"...","evidence_limit":"..."}],'
+            '"uncertainty":"..."}</comparison>. Compare 1-5 closest papers with no invented IDs. '
+            'IDEA: ' + idea + '\nRETRIEVED: ' + json.dumps(records, ensure_ascii=False),
+            ('comparison',), validate=validate)
+        value = json.loads(response['comparison'])
+        status = {'overlap':'similar_work_found','distinct_within_retrieved':'no_similar_work_found',
+                  'insufficient_evidence':'not_established'}[value['verdict']]
+        return NoveltyAssessment(status, queries, papers, value['uncertainty'],
+            value['closest_paper_id'] if status == 'similar_work_found' else None,
+            basis='model_assessment_of_retrieved_and_supplied_sources', comparisons=value['comparisons'])
 
     async def rank(self, candidates, topic):
         scores = [0.0] * len(candidates)

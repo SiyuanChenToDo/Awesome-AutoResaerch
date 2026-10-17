@@ -9,7 +9,7 @@ from typing import Protocol
 from ..types import ExperimentPlan
 from ..errors import ConfigurationError, SageError
 from .contracts import EvaluationContract, ExecutionBackend, digest, BackendExecutionError
-from .commands import apply_command
+from .commands import apply_command, CommandFormatError
 from . import prompts
 
 
@@ -26,12 +26,14 @@ class ExperimentRunner:
             raise ConfigurationError('Execution requires an explicitly configured backend')
         self.runtime, self.contract, self.backend = runtime, contract, backend
 
-    async def run(self, plan: ExperimentPlan):
+    async def run(self, plan: ExperimentPlan, *, on_progress=None):
         contract_digest = self.contract.sha256
         result = {'schema_version': 'sage.execution.v1', 'status': 'running',
                   'contract': self.contract.public_record(), 'contract_digest': contract_digest,
                   'attempts': [], 'selected_attempt_id': None, 'fixture': bool(self.backend and self.backend.fixture),
                   'scientific_validation': 'not_performed', 'errors': []}
+        if on_progress:
+            on_progress(result)
         current, reflection, best, repair_count = '', '', None, 0
         repair_error = None
         for number in range(1, self.contract.max_attempts + 1):
@@ -43,7 +45,9 @@ class ExperimentRunner:
                 if self.contract.sha256 != contract_digest:
                     raise ConfigurationError('Frozen contract changed')
                 if repair_error:
-                    prompt = prompts.repair_prompt(current, repair_error)
+                    prompt = prompts.repair_prompt(current, repair_error,
+                        rejected_command=result['attempts'][-2].get('command', ''),
+                        contract=self.contract.public_record())
                     stage = 'execution.repair'
                 else:
                     history = [{k:v for k,v in a.items() if k != 'code'} for a in result['attempts'][:-1]]
@@ -98,6 +102,8 @@ class ExperimentRunner:
                     diagnostic = f'Syntax error at line {error.lineno}, column {error.offset}: {error.msg}'
                 elif isinstance(error, BackendExecutionError):
                     diagnostic = error.diagnostic
+                elif isinstance(error, CommandFormatError):
+                    diagnostic = str(error)
                 elif isinstance(error, ValueError):
                     # Parser/evaluator messages are owned; generic backend ValueError bodies are not exposed.
                     diagnostic = 'Candidate command, output or backend contract rejected; inspect recorded source and required schema.'
@@ -116,7 +122,11 @@ class ExperimentRunner:
                     result['status'] = 'repair_budget_exhausted'
                     break
             finally:
+                if on_progress:
+                    on_progress(result)
                 self.runtime.event('execution.attempt', attempt['status'], attempt_id=attempt['attempt_id'], error=attempt['error'])
         if result['status'] == 'running':
             result['status'] = 'attempt_budget_exhausted' if best is not None else 'no_valid_candidate'
+        if on_progress:
+            on_progress(result)
         return result

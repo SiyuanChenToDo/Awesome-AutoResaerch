@@ -37,9 +37,9 @@ import math
 import re
 from typing import Protocol
 
-from ..errors import BudgetExceeded, InvalidResponse, SageError
+from ..errors import BudgetExceeded, InvalidResponse, SageError, ValidationError
 from ..review.report import review_report
-from .prompts import SECTIONS, TITLES, scaffold_prompt, section_prompt, revision_prompt
+from .prompts import SECTIONS, TITLES, scaffold_prompt, section_prompt, revision_prompt, MAX_COMMENTARY_CHARS
 
 
 class EvidenceWriter(Protocol):
@@ -87,6 +87,8 @@ def parse_section(value, reference_ids):
         raise InvalidResponse('Report section has unexpected fields')
     if not isinstance(section['commentary'], str) or not section['commentary'].strip():
         raise InvalidResponse('Report commentary is missing')
+    if len(section['commentary']) > MAX_COMMENTARY_CHARS:
+        raise ValidationError('bounded_commentary', 'commentary')
     citations = section['citation_ids']
     if not isinstance(citations, list) or len(citations) > len(reference_ids) or any(not isinstance(x, str) or x not in reference_ids for x in citations):
         raise InvalidResponse('Report cites an unsupported source')
@@ -263,7 +265,45 @@ def render_draft_markdown(report):
     return '\n'.join(lines) + '\n'
 
 
-async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
+def proposal_context(proposal):
+    """Stable semantic view; replay logs and duplicate histories are not evidence.
+
+    Keep source extractions and accepted requirements intact. The complete ledger
+    remains in artifacts, without being copied into every section request.
+    """
+    from ..discussion.context import compact_payload, compact_handoff
+    view = {key: deepcopy(proposal[key]) for key in
+            ('topic', 'mode', 'status', 'selected_index', 'errors', 'evidence') if key in proposal}
+    view['candidates'] = []
+    for candidate in proposal.get('candidates', []):
+        chain = candidate.get('chain', {})
+        novelty = candidate.get('novelty', {})
+        view['candidates'].append({
+            **{key: deepcopy(candidate[key]) for key in ('idea', 'future', 'human_considerations') if key in candidate},
+            'chain': {key: deepcopy(chain[key]) for key in ('evidence', 'trend', 'entities', 'relation', 'stop_reasons') if key in chain},
+            'novelty': {**{key: deepcopy(novelty[key]) for key in ('status', 'summary', 'similar_paper_id', 'basis') if key in novelty},
+                        'compared_source_ids': [p.get('paper_id') for p in novelty.get('compared_papers', [])]},
+            'rejected_attempts': [{key: deepcopy(attempt[key]) for key in
+                ('attempt', 'summary', 'similar_paper_id', 'queries') if key in attempt}
+                for attempt in candidate.get('rejected_attempts', [])]})
+    experiment = proposal.get('experiment')
+    if isinstance(experiment, dict):
+        view['experiment'] = {key: deepcopy(experiment[key]) for key in
+                              ('proposal', 'status', 'design_contract') if key in experiment}
+    discussion = proposal.get('discussion')
+    if isinstance(discussion, dict):
+        view['discussion'] = {'status': discussion.get('status'),
+            'critiques': [{key: deepcopy(c[key]) for key in
+                ('critique_id', 'status', 'requested_change', 'uncertainty', 'error_code') if key in c}
+                for c in discussion.get('critiques', [])]}
+        if discussion.get('plan_handoff'):
+            view['discussion']['plan_handoff'] = compact_handoff(discussion['plan_handoff'])
+    view['evidence_ids'] = [source['paper_id'] for source in supplied_references(proposal)]
+    view['history_scope'] = 'Final proposal and supplied evidence only; full history and audit are retained separately.'
+    return compact_payload('report', view)
+
+
+async def generate_report(runtime, proposal: dict, execution: dict, *, on_progress=None) -> dict:
     """Draft/review with the supplied Runtime; deterministic facts survive model failure."""
     if not isinstance(proposal, dict) or not isinstance(execution, dict):
         raise ValueError('Proposal and execution must be dictionaries')
@@ -287,7 +327,9 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
     report['sections'] = [{'section_id': name, 'title': TITLES[name], 'commentary': '',
                            'citation_ids': [], 'claim_status': 'unverified_model_commentary',
                            'rendered_in_markdown': False, 'status': 'not_generated'} for name in SECTIONS]
-    context = {'proposal': proposal, 'references': references, 'contract': report['contract'],
+    if on_progress:
+        on_progress(report)
+    context = {'proposal': proposal_context(proposal), 'references': references, 'contract': report['contract'],
                'execution_status': report['execution_status'], 'observations': observations,
                'fixture': report['fixture'], 'dry_run': dry_run,
                'scientific_validation': 'not_performed'}
@@ -302,6 +344,8 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
             values = await runtime.ask(stage, section_prompt(section['section_id'], context, report['sections']),
                                        ('section',), validate=lambda values: parse_section(values['section'], reference_ids))
             section.update(parse_section(values['section'], reference_ids))
+            if on_progress:
+                on_progress(report)
             runtime.event(stage, 'drafted', section_id=section['section_id'], claim_status='unverified_model_commentary')
         stage = 'review.report'
         report['model_review'] = await review_report(runtime, context, report['sections'])
@@ -333,6 +377,8 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
                 entry['previous_review'] = current_review
                 report['sections'], report['model_review'] = candidate, candidate_review
             entry['status'] = 'accepted' if entry['accepted'] else 'retained_previous_draft'
+            if on_progress:
+                on_progress(report)
             runtime.event('writing.revise', entry['status'], round=round_index + 1,
                           basis='unverified_model_score_only')
         report['status'] = 'completed_with_uncertainty' if warnings else 'completed'
@@ -345,4 +391,6 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
         runtime.event('writing.report', report['status'], error_code=error.code)
     report['markdown'] = render_markdown(report)
     report['draft_markdown'] = render_draft_markdown(report)
+    if on_progress:
+        on_progress(report)
     return report

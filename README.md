@@ -21,7 +21,7 @@
 
 **Scientific Agent for Grounded Exploration** 是一个逐步建设中的模块化科研提案工作流。核心代码与提示词位于 [sage/](sage/)，来自对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。离线与联网模式使用同一控制器，通过可替换的模型和文献提供方运行。
 
-**当前状态**：提案链已实现并通过离线验证；live 适配器尚未真实联网实测；Agent Laboratory 衍生的代码迭代与报告链见下方独立入口，默认不执行生成代码。生成的想法、方案和模型评分均需研究者复核，不能视作科学结果。
+**当前状态**：提案链已通过真实 DeepSeek + arXiv 服务验证，364 项离线测试通过。新版证据提炼、共享讨论与方案交接已通过一次保留来源/候选的续跑；最终代码尚未从零重跑全部流程。Agent Laboratory 衍生的代码迭代与报告链默认不执行生成代码，真实科研实验尚未完成。详见[验证范围](docs/validation-20261018.md)。
 
 <a id="capabilities"></a>
 ## 从一个问题，到一份可追溯的提案
@@ -46,7 +46,7 @@
 
 ### 三个始终可见的边界
 
-- **证据读到哪里，就写到哪里。** live 默认读取题录与摘要；授权全文可显式提供本地 article JSON，不自动下载 PDF 或启动 SciPDF/GROBID。
+- **证据读到哪里，就写到哪里。** standard 模式默认读取题录与摘要；显式选择 research 配置可获取官方 arXiv 正文、选段提炼证据卡，记录未读范围和缺失项；也支持本地 article JSON。[证据输入说明](docs/ideation-evidence.md)
 - **没有证据时，保留未知。** 没搜到相似论文不证明全球首次；空证据或无效回复不能变成“新颖”。
 - **先把软件链跑通，再验证科研效果。** 离线 fixtures、契约检查和模型评分分别有用途，均不能替代真实实验与独立科学评价。
 
@@ -88,7 +88,7 @@ python -m sage run --mode live --allow-live --topic "你的研究问题" --outpu
 
 live 会把研究问题与检索/阅读内容发送给所选模型服务，并向 Semantic Scholar 发送检索请求。运行前确认数据可外传及模型费用；配置了凭据本身不会触发 live。
 
-当前适配器有假客户端测试，但未做真实服务验证。可选 embedding 余弦重排未配置时，明确回退为词项匹配。`--articles` 按检索结果 ID/标题附加授权 article JSON，不是直接用本地 PDF 指定锚点的入口。
+DeepSeek + arXiv 已做真实服务验证；Semantic Scholar 引用图与 embedding 服务尚未完成真实验证。standard 未配置 embedding 时使用词项匹配；research 使用有配置的 embedding 或显式模型语义重排。`--articles` 按检索结果 ID/标题附加授权 article JSON。[research 配置与预算](docs/ideation-evidence.md)
 
 </details>
 
@@ -103,7 +103,7 @@ SAGE 保留了 CoI 的核心研究提案方法，并拆为可以独立维护的�
 | **有搜索代码吗？** | 有。包括 Semantic Scholar 查询、查询改写、引用关系、日期过滤、去重及可选 embedding 重排；未配置 embedding 时使用词项匹配。 |
 | **有完整研究逻辑吗？** | 查询 → 文献链 → 提取 → 构思 → 判新/再生成 → 比较 → 方案/评审修订已实现并离线验证。 |
 | **有哪些有意差异？** | 命名契约替代位置元组；循环与调用有上限；未知新颖性不再误判通过；默认全文下载/解析路径未迁移。 |
-| **已经复现原论文效果吗？** | 尚未运行原始上游流程，也未实测 live 或复现科研指标。新 laboratory 链另有代码迭代与报告草稿；原版科研效果、真实服务质量和自动投稿均未验证或提供。 |
+| **已经复现原论文效果吗？** | 尚未运行原始上游流程或复现科研指标。真实 DeepSeek + arXiv 提案服务已验证接通；没有证明优于上游。laboratory 链另有代码迭代与报告草稿，自动投稿未提供。 |
 
 提示词入口：[检索](sage/discovery/prompts.py) · [文献](sage/literature/prompts.py) · [构思](sage/ideation/prompts.py) · [方案](sage/experiment_design/prompts.py) · [评审](sage/review/prompts.py)
 
@@ -145,7 +145,7 @@ python -m sage laboratory --mode offline --backend fixture --allow-execution --o
                          博士后选择与规划要求 → 实验计划 → 代码迭代 → 报告
 ```
 
-每位博士生保留独立的来源范围、原始候选和修订历史。意见只能引用分配给该角色的来源；未知或失败的意见不能直接作为已采纳依据。采纳的意见绑定到实验计划，跨轮保留，修订后的想法重新检查相似工作。
+每位博士生保留原始来源链、候选和修订历史。旧版 v1/v2 保持角色来源约束；research 使用 v3，共享已读取的证据卡，来源归属作为溯源信息。未知或失败的事实意见不能直接采纳；方法学意见可提出控制实验而不伪造引文。采纳要求由控制器跨轮保留并绑定到实验计划，修订后的想法重新检查相似工作。
 
 ```bash
 python -m sage laboratory --mode offline --discussion-mode hybrid --backend fixture --allow-execution --output projects/sage-hybrid
@@ -153,16 +153,18 @@ python -m sage laboratory --mode offline --discussion-mode hybrid --backend fixt
 
 默认开启 hybrid 时为 **2 位博士生、1 轮互评**；支持 2–4 位、1–3 轮，仍受同一个总调用预算限制。旧命令默认 `discussion-mode none`，方便关闭讨论做对照。角色共用模型并不等于独立专家。
 
-组合提示词提供 `v1` / `v2` 版本选择并记录哈希；v2 加入具体反证控制、证据缺口和分歧约束。它们是可审阅的提示词迭代，尚无真实模型实验说明 v2 更优，也不会自动无界改写自身。
+组合提示词提供 `v1` / `v2` / `v3` 版本选择并记录哈希；research 默认 v3，4 个候选/角色、2 轮讨论。真实服务冒烟验证使用 2 个候选/角色、2 轮；4 角色版本目前仅有离线验证。尚未通过对照实验证明任一版本科研质量更优。
 
 详见[讨论机制与参数](docs/coi-laboratory-discussion.md)与[验证记录](docs/hybrid-validation.md)。离线测试检查数据传递、来源归属和预算；不能据此断言讨论提高科研质量。
+
+ARIS 与 CORAL 的源码比较、接入位置和验收顺序见[整合分析](docs/aris-coral-integration.md)；本次仅做设计分析，尚未接入运行。
 
 ## 慢慢建设，先把每一步做实
 
 | 阶段 | 状态与下一步 |
 |---|---|
 | **基础与提案链** | 已提供：模块化代码、提示词、离线控制器、项目模板和来源记录 |
-| **真实服务验证** | 待做：在明确授权与预算下验证 live 接通、失败行为、来源质量和实际费用 |
+| **真实服务验证** | 已验证 DeepSeek + arXiv 提案链与失败处理；引用图、embedding、完整规模与科研质量对照仍待验证；记录 token/请求消耗，不等于账单费用 |
 | **更多方法接入** | Agent Laboratory 的代码迭代与报告机制已分模块接入；原始项目未独立运行 |
 | **受限实验执行** | 已有有界尝试与显式后端入口；生产隔离、可信审批、任务恢复仍需单独验收 |
 | **独立评价与写作** | 报告草稿链已接入；独立科学评价、完整证据重建与真实研究质量仍待验证 |

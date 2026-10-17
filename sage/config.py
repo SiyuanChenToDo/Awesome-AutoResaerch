@@ -28,10 +28,33 @@ class RunConfig:
     discussion_students: int = 2
     discussion_rounds: int = 1
     discussion_prompt_version: str = "v2"
+    evidence_mode: str = "legacy"
+    paper_text_mode: str = "provided"
+    rerank_mode: str = "auto"
+    novelty_search_rewrites: int = 0
+    capsule_chunk_chars: int = 7000
+    capsule_max_chunks: int = 8
+    capsule_max_claims: int = 18
+    capsule_max_chars: int = 12000
+    novelty_fulltext_papers: int = 0
+    citation_policy: str = 'required'
 
     def __post_init__(self):
-        if self.discussion_mode not in ('none', 'hybrid') or self.discussion_prompt_version not in ('v1', 'v2'):
+        if self.discussion_mode not in ('none', 'hybrid') or self.discussion_prompt_version not in ('v1', 'v2', 'v3'):
             raise ConfigurationError('Invalid discussion mode or prompt version')
+        if self.evidence_mode not in ('legacy', 'capsule') or self.paper_text_mode not in ('provided', 'arxiv'):
+            raise ConfigurationError('Invalid evidence or paper text mode')
+        if self.rerank_mode not in ('auto', 'model', 'semantic', 'lexical'):
+            raise ConfigurationError('Invalid rerank mode')
+        if self.citation_policy not in ('required', 'prefer'):
+            raise ConfigurationError('Invalid citation policy')
+        bounds = {'novelty_search_rewrites': (0, 4), 'capsule_chunk_chars': (1000, 16000),
+                  'capsule_max_chunks': (1, 20), 'capsule_max_claims': (1, 40),
+                  'capsule_max_chars': (2000, 30000), 'novelty_fulltext_papers': (0, 5)}
+        for name, (low, high) in bounds.items():
+            value = getattr(self, name)
+            if type(value) is not int or not low <= value <= high:
+                raise ConfigurationError(f'{name} outside supported range')
         if type(self.discussion_students) is not int or not 2 <= self.discussion_students <= 4:
             raise ConfigurationError('discussion_students must be between 2 and 4')
         if type(self.discussion_rounds) is not int or not 1 <= self.discussion_rounds <= 3:
@@ -70,3 +93,20 @@ class RunConfig:
 
     def to_dict(self):
         return asdict(self)
+
+
+def profile_overrides(name):
+    """Explicit quality profile; keep small/offline compatibility defaults affordable."""
+    if name == 'standard':
+        return {}
+    if name != 'research':
+        raise ConfigurationError('Unknown research profile')
+    return dict(evidence_mode='capsule', paper_text_mode='arxiv', rerank_mode='semantic',
+                novelty_fulltext_papers=2, citation_policy='prefer',
+                novelty_search_rewrites=2, max_candidates=4, max_chain_length=5,
+                min_chain_length=3, max_queries=4, max_related=12,
+                discussion_mode='hybrid', discussion_students=4, discussion_rounds=2,
+                discussion_prompt_version='v3', max_model_calls=400,
+                max_search_calls=160, max_wall_seconds=3600,
+                max_tokens_per_call=4000, max_reserved_output_tokens=1600000,
+                max_prompt_chars=180000)

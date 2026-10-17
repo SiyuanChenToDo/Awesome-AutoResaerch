@@ -18,6 +18,21 @@ SPEC.loader.exec_module(catalog)
 
 
 class CatalogFixture(unittest.TestCase):
+    def test_checks_ignore_local_dependency_docs_and_json_but_keep_owned_files(self):
+        for name in ('.venv', 'venv', 'node_modules', 'projects'):
+            dependency = self.root / name / 'package'
+            dependency.mkdir(parents=True)
+            (dependency / 'README.md').write_text('[upstream](missing-example.py)')
+            (dependency / 'broken.json').write_text('invalid third-party JSON')
+        owned = self.root / 'owned.json'
+        owned.write_text('{}')
+        self.assertEqual(catalog.check_links(self.root), [])
+        scanned = list(catalog.repository_files(self.root, '*.json'))
+        self.assertIn(owned, scanned)
+        self.assertFalse(any(p.name == 'broken.json' for p in scanned))
+        (self.root / 'README.md').write_text('[missing](missing.md)')
+        self.assertEqual(len(catalog.check_links(self.root)), 1)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

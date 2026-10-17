@@ -72,7 +72,16 @@ def _paced_request(transport, url, headers, timeout, max_bytes):
 
 class ArxivSource:
     chain_relation = 'topic_time'
-    prompt_policy = ('Source policy: arXiv metadata/abstracts only, not verified peer review or full text. '
+
+    @staticmethod
+    def relax_queries(query):
+        terms = _terms(query)
+        return list(dict.fromkeys(' '.join(terms[:n]) for n in (4, 2) if len(terms) > n))
+    query_instructions = ('For arXiv, each query must contain 2-4 essential topic keywords only. '
+                          'Do not put evaluation constraints, full sentences, Boolean operators or API field syntax in queries. '
+                          'Use distinct concise queries for distinct aspects of the topic.')
+    prompt_policy = ('Source policy: arXiv search returns metadata/abstracts, not verified peer review. '
+                     'An attached evidence capsule may include separately retrieved article text; obey its scope and coverage. '
                      'No citation/reference graph is available. Topic/time chains do not establish influence '
                      'or that a later paper builds on an earlier one. Do not infer missing references. '
                      'For search query outputs use concise 2-4 keyword strings, no API syntax.\n\n')
