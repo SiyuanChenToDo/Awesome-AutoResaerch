@@ -61,7 +61,7 @@ def patched_sources(root: Path = ROOT) -> dict[str, str]:
         sources[patch["path"]] = text.replace(patch["old"], patch["new"], 1)
         modified.add(patch["path"])
     for path in modified:
-        sources[path] = ("# MODIFIED by Awesome AutoResearch (2026-10-17).\n"
+        sources[path] = ("# MODIFIED by SAGE (2026-10-17).\n"
                          "# See LOCAL_CHANGES.json; upstream source remains Apache-2.0.\n" + sources[path])
     return sources
 

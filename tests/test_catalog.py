@@ -22,7 +22,7 @@ class CatalogFixture(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.base = Path(self.temporary.name)
-        self.root = self.base / "workbench"
+        self.root = self.base / "sage"
         self.root.mkdir()
         self.source = self.base / "source.md"
         self.source.write_text(

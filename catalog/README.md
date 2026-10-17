@@ -1,4 +1,4 @@
-# 机器可读目录
+# SAGE 机器可读目录
 
 - [tools.md](tools.md)、[papers.md](papers.md)、[benchmarks.md](benchmarks.md)、[resources.md](resources.md)：同一数据集的浏览视图。
 - [records.json](records.json)：自动导入，所有条目保留原文位置，不声明已复现。
@@ -15,4 +15,6 @@
 
 ## 按功能找工具与代码
 
-[功能模块目录](../modules/README.md)提供 8 类入口，引用本目录原记录，不另建重复清单。CoI-Agent 的固定源码与离线准备状态见[导入说明](../third_party/coi_agent/README.md)；原始 catalog 记录保持来源状态，当前接入进度单独写入 [curation.json](curation.json)。
+[功能模块目录](../modules/README.md)提供 8 类入口，引用本目录原记录，不另建重复清单。CoI-Agent 的方法已拆入 [SAGE 运行模块](../sage/)，来源与偏离见[迁移说明](../docs/sage-migration.md)，固定原始源码见[导入说明](../third_party/coi_agent/README.md)；原始 catalog 记录保持来源状态，当前接入进度单独写入 [curation.json](curation.json)。
+
+CoI-Agent 的 `modularized` / `offline_end_to_end_verified` 仅表示 SAGE 维护的模块化流程通过 fake providers 跑通；`live_verification_status: not_run` 与 `scientific_verification_status: not_performed` 分别保留联网与科学验证边界。原始 `records.json` 继续只表达来源清单状态。

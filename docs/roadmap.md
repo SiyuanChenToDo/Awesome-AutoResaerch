@@ -1,30 +1,31 @@
-# 路线图：先可靠记录，再受限执行
+# SAGE 路线图：从可运行提案链到可信研究闭环
 
-这是按验收条件推进的计划，不是交付日期承诺。功能的“已实现”仅指仓库内可检查的文件/脚本；外部论文或工具的存在不等于已接入。
+这是按验收条件推进的计划，不是交付日期承诺。软件模块的存在、离线检查、真实 API 实测和科学效果是不同层级；外部工具的存在不等于已接入。
 
 ## 当前项目计划（2026-10-17）
 
-本节记录当前项目选择，独立于下方 P0–P4 的工作台功能阶段。
+本节保留用户的项目选择，独立于下方 P0–P4 的能力阶段。
 
-| 项目 | 计划任务状态 | 当前安排 | 运行核验 / 工作台集成 |
+| 项目 | 计划任务状态 | 当前安排 | 运行/集成边界 |
 |---|---|---|---|
-| [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | `completed`，按用户要求完成 | 从后续复现优先队列排除；保留历史资料与借鉴记录 | `not_run` / `not_integrated` |
-| CoI-Agent（[Chain of Ideas](https://arxiv.org/abs/2410.13185)） | `in_progress` | 已导入固定源码、8 类目录与离线补丁准备；后续才接联网执行 | `not_run` / `source_imported` |
-| [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) | `planned` | 当前重点：独特机制、代码入口与模块功能 | `not_run` / `not_integrated` |
+| [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | `completed`，按用户要求完成 | 不再进入后续复现优先队列；保留历史资料和机制借鉴 | `not_run` / `not_integrated` |
+| CoI-Agent（[Chain of Ideas](https://arxiv.org/abs/2410.13185)） | `in_progress` | 以不可变快照为来源，将核心提案链和提示词拆为 SAGE 功能模块 | 原始上游仍 `not_run` / `source_imported`；SAGE 有独立离线运行与可选 live 适配器 |
+| [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) | `planned` | 后续研究独特机制、代码入口及模块功能 | `not_run` / `not_integrated`，尚未导入 |
 
-**状态边界**：autoresearch 的 `completed` 来自用户对计划的明确决定，不表示本仓库已安装、独立运行、复现性能或完成集成。现有[核验记录](../catalog/verification.json)保持原范围，不因此升级。
+**状态边界**：autoresearch 的计划完成不表示安装、运行或复现；不能因此升级[核验记录](../catalog/verification.json)。[curation.json](../catalog/curation.json)保留来源项目的计划/导入状态；SAGE 自有代码的能力以运行包和最终检查结果为准，不用目录元数据代替软件验证。
 
-CoI-Agent 当前基础：已按 Apache-2.0 导入 15 个原始文件（[来源清单](../third_party/coi_agent/manifest.json)），新增[分类目录](../modules/README.md)和 5 个确定性补丁的离线准备器。原始源码未修改；已做离线单元/结构检查，未安装上游依赖、联网调用模型、训练或复现实验。
+### SAGE 当前落地
 
-接下来继续围绕 CoI-Agent 与 Agent Laboratory：
+- 自有 `sage/` 运行包，discovery、literature、ideation、experiment_design、review、orchestration 分别包含实际逻辑；原始 19 个 prompt 函数按职责迁移。
+- 同一控制器支持标准库离线 fake providers 和显式 opt-in 的 OpenAI/Azure + Semantic Scholar live adapters。
+- 查询/改写、双向文献链、提取、趋势/实体、未来方向、候选/定稿、有限判新再生成、六维两两比较、方案/评审/补充证据修订串联。
+- 命名 dataclass、严格输出解析、有限重试、请求/输出 token 预留与时间上限、错误及结构审计。
+- 当前 live 无自动 PDF 下载/解析；默认 abstract-only，可显式提供本地 article。未完成真实服务实测或科研效果验证。
+- execution/writing 为 Protocol-only，无实验 runner、自动写作、可信审批或 OS 沙箱。
 
-1. 固定代码版本，区分论文描述、README 自述和实际代码可见的功能。
-2. 标出入口、核心模块、输入输出、依赖与调用链，说明各自的独特机制。
-3. 列出最小验证步骤、资源与权限需求、预期产物和停止条件；真实运行另需明确授权与预算。
+源方法对照及安全偏离见[迁移说明](sage-migration.md)，可执行命令见[运行说明](sage-runtime.md)。下一步优先验证故障/不确定性和真实服务的受控接通，再单独设计科研质量对照；Agent Laboratory 的接入不因本次改造自动完成。
 
-代码导入与离线准备已交付，实际联网集成和研究效果验证尚未完成。机器可读的当前优先队列与任务状态见 [curation.json](../catalog/curation.json)；其他目录条目继续作为背景资料。
-
-## P0：可搬走的研究包（本仓库起点）
+## P0：可搬走的研究包（已提供基础）
 
 范围：中文工作流与架构、文献/假设/计划/声明/复盘模板、离线计划示例、资源目录和根目录 README 列明的初始化/检查工具。
 
@@ -33,7 +34,7 @@ CoI-Agent 当前基础：已按 Apache-2.0 导入 15 个原始文件（[来源�
 - 新研究项目可从模板建立，未知值仍为未知，不生成假实验记录。
 - JSON 与本地链接可检查；不需要 API 密钥、GPU 或付费服务。
 - 来源和核验状态可区分；模板不把引用当事实证明。
-- 文档明确区分已提供的脚手架与后续执行能力。
+- 文档明确区分已提供的提案工作流与后续实验执行能力。
 - 人工能够走完一次“不支持假设”的报告，负结果不被流程淘汰。
 
 **边界**：检查文件存在和字段有效不等于计划科学有效，也不等于审批可信。P0 不运行训练、不启动无人值守循环、不承诺自动审稿或可发表性。
@@ -64,9 +65,9 @@ CoI-Agent 当前基础：已按 Apache-2.0 导入 15 个原始文件（[来源�
 - 从原始结果重建全部图表、区间和声明链接。
 - 报告泄漏、缺失或失败时不会被默认当作有效低分。
 
-## P3：可替换的研究能力接入（待实现）
+## P3：可替换的研究能力接入（文献/提案部分已实现）
 
-范围：先接一个文献检索器、一个想法生成器、一个受限实验后端；再依据实际需要扩展。模型、工具和供应商不进入核心文件格式。
+范围：文献检索、想法与实验方案模块及可替换提供方已实现；受限实验后端尚未实现。接下来在授权/预算内验证 live 服务与来源质量，再开展科学效果对照。模型、工具和供应商不进入核心文件格式。
 
 验收：
 
@@ -88,6 +89,8 @@ CoI-Agent 当前基础：已按 Apache-2.0 导入 15 个原始文件（[来源�
 - 跨任务证据支持后才扩大主张；重复使用同一任务不算独立迁移。
 
 ## 选择下一步的规则
+
+已实现的请求预算和结构审计不代表 P1/P2 已完成。SAGE 的提案链可以先于真实实验执行落地，但不得用离线 fixture 结果填补研究证据。
 
 优先修复“证据会丢”“失败被藏”“无法重算”“边界没守住”的问题，其次增加自动化覆盖，最后再追求吞吐量。只有一个已审查的低成本实验真正闭环后，才值得引入调度器、远端 GPU、可视化控制台或大规模多 Agent。
 

@@ -1,16 +1,16 @@
-# 精读与工具借鉴路线
+# SAGE 精读与工具借鉴路线
 
 目标不是拼装最多的 Agent，而是形成一个研究者能判断、能停止、能复核的小闭环。下列顺序是本仓库的设计建议，不是性能排行榜。重点来源抽查范围见 [verification.json](../catalog/verification.json)，完整选择与关联见 [curation.json](../catalog/curation.json)。
 
 ## 当前重点与已完成任务
 
-当前优先研究 **CoI-Agent**（[Chain of Ideas 论文](https://arxiv.org/abs/2410.13185)）与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory)：解释独特机制，逐项定位代码入口、模块职责、输入输出与待验证功能。具体验收见[当前项目计划](roadmap.md#当前项目计划2026-10-17)。本页不将尚未检查的代码能力写成事实。
+SAGE 已将 **CoI-Agent**（[Chain of Ideas 论文](https://arxiv.org/abs/2410.13185)）的核心提案链与提示词按功能拆分，先读[源方法与模块对照](sage-migration.md)，再看每个模块的实际实现及离线边界。[Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory)仍为后续研究重点，尚未导入或集成。具体验收见[当前项目计划](roadmap.md#当前项目计划2026-10-17)。本页不将尚未检查的代码能力写成事实。
 
-[karpathy/autoresearch](https://github.com/karpathy/autoresearch) 已按用户要求标为 `task_status: completed`，不再进入后续复现优先队列。固定训练预算、窄代码修改面、保留/丢弃记录仍作为历史借鉴；全成本与硬件可比性的核验边界保留。计划完成不代表独立复现，运行核验仍为 `not_run`，工作台集成仍为 `not_integrated`。
+[karpathy/autoresearch](https://github.com/karpathy/autoresearch) 已按用户要求标为 `task_status: completed`，不再进入后续复现优先队列。固定训练预算、窄代码修改面、保留/丢弃记录仍作为历史借鉴；全成本与硬件可比性的核验边界保留。计划完成不代表独立复现，运行核验仍为 `not_run`，SAGE 集成仍为 `not_integrated`。
 
 ## 背景路线第一轮：先建立可信最小闭环
 
-下表保留工作台设计背景，不替代上述当前项目优先队列。
+下表保留SAGE 设计背景，不替代上述当前项目优先队列。
 
 | 读什么 | 要借鉴的机制 | 在这里落实为 | 仍需验证 |
 |---|---|---|---|

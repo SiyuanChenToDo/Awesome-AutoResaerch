@@ -1,23 +1,17 @@
-# 文献分析 · literature
+# SAGE 文献分析 · literature
 
-**职责**：区分论文作者的主张、实际读到的证据与研究者推断，建立可定位的证据卡和论文演进关系。
+**实现入口**：[sage/literature](../../sage/literature/) · [prompts.py](../../sage/literature/prompts.py)
 
-- **输入**：候选论文、获准读取的 PDF、引用信息、研究问题与已读范围。
-- **输出**：方法/实验/实体摘录、引用链、局限与冲突，人工核对后写入 [literature.md](../../templates/project/literature.md)。
-- **已有**：证据卡模板与[工作流 G1](../../docs/workflow.md)的人工审核要求；尚无已运行验证的全文分析后端。
+`Literature` 把已有论文内容提取为 `Evidence`，沿前向被引和后向参考文献建立有界 `Chain`，检查新论文相关性，保留停止原因。趋势/实体综合由后续 [ideation](../ideation/README.md)完成。
 
-## CoI 源码入口（已导入，未运行）
+- **输入**：带 ID/URL/已读范围的 `Paper`、研究问题、发现模块和长度上限。
+- **输出**：想法、来源报告的实验描述、实体、参考文献，以及有序 evidence 链。字段用命名 dataclass 表达，避免上游位置元组错位。
+- **证据范围**：无本地 article 时明确为 `abstract_only`；显式提供 article 的内容标为 `user_supplied_full_text`。后者只说明用户提供了文本，不认证全文完整性、来源真实性或论文结论。
+- **内容边界**：只读取提供的 sections/references，不自动下载 PDF，不启动 SciPDF/GROBID；摘要中没有的细节必须保持未知。
+- **失败语义**：重复/无关/耗尽来源不能触发无限循环；达不到最小链长报告证据不足。
 
-- [searcher/sementic_search.py](../../third_party/coi_agent/upstream/searcher/sementic_search.py)：`read_arxiv_from_path()` 调用 SciPDF 解析 PDF；`read_paper_content()` / `read_paper_content_with_ref()` 拼接正文与参考文献。
-- [agents.py](../../third_party/coi_agent/upstream/agents.py)：`get_paper_idea_experiment_references_info()` / `get_article_idea_experiment_references_info()` 提取想法、实验描述、实体和参考文献；`deep_research_paper_with_chain()` 前向追被引、后向追参考文献，并生成链及趋势摘要。
-- [deep_research_agent_prompts.py](../../third_party/coi_agent/upstream/prompts/deep_research_agent_prompts.py)：对应信息提取和趋势分析提示词。
+对应 CoI 的 `get_paper_idea_experiment_references_info()`、`get_article_idea_experiment_references_info()`、`deep_research_paper_with_chain()` 的抽取/追链部分，以及正文/参考文献拼接。完整[迁移对照](../../docs/sage-migration.md)保留上游入口和安全偏离。
 
-上游流程依赖 PDF 解析服务与模型。链中的关联是候选解释，摘要不是逐条核验后的事实；源代码输出仍需补稳定文献 ID、版本、页码/章节等证据定位。原始快照与修补副本的边界见 [orchestration](../orchestration/README.md)。
+机器提取是待复核材料；参考关系不是因果证据，模型摘要不是独立事实验证。按[工作流 G1](../../docs/workflow.md)把关键结论与实际段落、版本、支持/反对证据核对后，整理到 [literature.md](../../templates/project/literature.md)。
 
-## 参考与扩展
-
-参考[工具目录](../../catalog/tools.md)的 PaperQA，以及[论文目录](../../catalog/papers.md)的 ResearchAgent；这里只建立阅读入口，未集成这些系统。资料来源与抽查见 [catalog](../../catalog/README.md)。
-
-**下一接入点**：把每段提取结果映射到来源 ID、正文位置、已读范围和支持/反对证据；为解析失败、引用错配、摘要与全文冲突建立离线测试。
-
-[上一步：文献发现](../discovery/README.md) · [下一步：研究构思](../ideation/README.md) · [返回模块索引](../README.md)
+[上一步：文献发现](../discovery/README.md) · [下一步：研究构思](../ideation/README.md) · [模块索引](../README.md)

@@ -28,7 +28,7 @@ class ProjectFixture(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.base = Path(self.temporary.name)
-        self.root = self.base / "workbench"
+        self.root = self.base / "sage"
         self.root.mkdir()
         shutil.copytree(REPO / "templates", self.root / "templates")
 

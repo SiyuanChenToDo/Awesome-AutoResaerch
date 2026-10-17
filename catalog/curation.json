@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "meaning": "Priorities P1/P2 are proposed adoption priority, not roadmap phases or empirical rankings; excluded means removed from future reproduction priorities. current_reproduction_priorities alone defines the current focus; other entries remain background references. task_status is planning status, independent of runtime_verification_status and integration_status. planned integration means no integration implemented. source_imported means pinned source and offline preparation exist, not live integration or reproduced results.",
+  "meaning": "Priorities P1/P2 are proposed adoption priority, not roadmap phases or empirical rankings; excluded means removed from future reproduction priorities. current_reproduction_priorities alone defines the current focus; other entries remain background references. task_status is planning status, independent of runtime_verification_status and integration_status. planned integration means no integration implemented. source_imported means pinned source and offline preparation exist, not live integration or reproduced results. modularized means source-derived capabilities are maintained in the SAGE package and its offline controller runs with injected fakes; it does not imply live APIs or scientific results were verified.",
   "plan_updated_at": "2026-10-17",
   "current_reproduction_priorities": [
     "arxiv-2410-13185",
@@ -11,20 +11,28 @@
       "id": "arxiv-2410-13185",
       "project": "CoI-Agent / Chain of Ideas",
       "stages": [
+        "discovery",
         "literature",
-        "ideation"
+        "ideation",
+        "experiment_design",
+        "orchestration",
+        "review"
       ],
       "priority": "P1",
       "task_status": "in_progress",
-      "integration_status": "source_imported",
-      "runtime_verification_status": "not_run",
-      "borrow": "已导入引用链、想法生成、方案设计、review 源码；原始快照与我们的离线补丁准备器分离。",
-      "caution": "联网执行、依赖安装、真实实验与性能复现均未进行；预算、无限重试、PDF 路径与错误语义仍需进一步优化。",
+      "integration_status": "modularized",
+      "runtime_verification_status": "offline_end_to_end_verified",
+      "borrow": "引用链、证据提取、趋势与实体综合、想法生成/新颖性筛查、两两比较、实验方案与证据支持的 review/refinement 已拆入 SAGE 的独立模块。",
+      "caution": "实际 API 兼容性、文献召回和科研效果尚未验证；live 默认仅题录/摘要，全文需显式 local article。实验执行和写作 runner 未实现，调用/token 限制不是美元预算或操作系统沙箱。",
       "related_ids": [],
       "source_import_status": "pinned_snapshot_with_offline_patches",
-      "offline_verification_status": "unit_tested_with_local_fakes",
+      "offline_verification_status": "owned_pipeline_and_provider_adapters_tested_with_fakes",
       "upstream_commit": "ac94317ff2d1997f362747edc2c9e5f0fdc9c450",
-      "source_manifest": "third_party/coi_agent/manifest.json"
+      "source_manifest": "third_party/coi_agent/manifest.json",
+      "live_verification_status": "not_run",
+      "scientific_verification_status": "not_performed",
+      "implementation_path": "sage/",
+      "migration_map": "docs/sage-migration.md"
     },
     {
       "id": "github-samuelschmidgall-agentlaboratory-288ff23a9cda",

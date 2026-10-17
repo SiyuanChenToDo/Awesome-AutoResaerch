@@ -1,23 +1,15 @@
-# 实验执行 · execution
+# SAGE 实验执行 · execution
 
-**职责**：在批准的边界内运行代码，保留真实日志、指标、失败与全部成本。
+**接口位置**：[sage/execution](../../sage/execution/)。本模块仅提供 Protocol 契约，**没有实现实验 runner**。
 
-- **输入**：冻结协议、批准范围、代码/数据/评分器版本、明确配置、种子与预算。
-- **输出**：追加式运行记录、原始日志、指标与制品索引，参照 [run-record.json](../../templates/run-record.json) 和 [runs.jsonl](../../templates/project/runs.jsonl)。
-- **已有**：运行记录模板与[项目检查器](../../scripts/research.py)；**待实现**：受限执行器、可信审批、强制预算和独立测试隔离。
+- **预期输入**：冻结协议、批准范围、代码/数据/评分器身份、配置、种子与预算。
+- **未来输出**：真实运行记录、日志、指标和制品，参考 [run-record.json](../../templates/run-record.json) 与 [runs.jsonl](../../templates/project/runs.jsonl)。
+- **当前状态**：SAGE 只生成实验方案并保留 `execution_status: not_implemented`。没有训练、Shell 研究命令、数据集下载、GPU 调度或测量输出。
 
-## CoI 的边界
+CoI-Agent 的 `generate_experiment()` 也是方案文本生成。模块化迁移没有把该名字升级为真实执行能力；离线 fixture 指标不应被写成真实实验记录，尚无尝试的项目账本保持为空。
 
-[main.py](../../third_party/coi_agent/upstream/main.py) 调用想法生成、`generate_experiment()` 与 `improve_experiment()`，最后把文本保存到 `result.json`。这些方法位于 [agents.py](../../third_party/coi_agent/upstream/agents.py)，没有训练、实验代码运行或指标测量入口。
+实现前须满足[路线图 P1](../../docs/roadmap.md)和[执行适配器契约](../../docs/architecture.md)：明确批准、隔离评分器/数据、真实计量与终止、幂等提交、失败保留、路径和网络权限测试。SAGE 当前请求预算不能代替这些要求。
 
-因此本模块没有 CoI 实验 runner；[离线准备](../orchestration/README.md)生成运行副本也不会启动研究任务。没有真实尝试时保持账本为空，不用模型生成数值填充结果。
+research-loop、steer、AiiDA 等[参考工具](../../catalog/tools.md)尚未集成。autoresearch 维持用户指定的计划 `completed`，运行/集成仍为 `not_run` / `not_integrated`；Agent Laboratory 尚未导入、运行或集成。
 
-## 参考与扩展
-
-- 参考[工具目录](../../catalog/tools.md)中的 research-loop、steer、AiiDA 以及[执行适配器契约](../../docs/architecture.md)；这些工具均未集成。
-- autoresearch 的计划任务保持 `completed`，不进入后续复现队列；该状态不改变其 `not_run` / `not_integrated`，详见[计划状态](../../catalog/curation.json)。
-- Agent Laboratory 是后续研究对象，尚未导入、集成或运行。
-
-**下一接入点**：按[路线图 P1](../../docs/roadmap.md)从单个低风险、离线、批准代码的最小执行器开始，先验证路径隔离、预算停止、重复提交与失败保留，再讨论自动循环。
-
-[上一步：实验设计](../experiment_design/README.md) · [下一步：评审与核验](../review/README.md) · [返回模块索引](../README.md)
+[上一步：实验设计](../experiment_design/README.md) · [评审与核验](../review/README.md) · [模块索引](../README.md)

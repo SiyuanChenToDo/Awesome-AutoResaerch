@@ -1,37 +1,35 @@
-# 工作流编排 · orchestration
+# SAGE 工作流编排 · orchestration
 
-**职责**：保留 CoI 完整调用链作为起点，集中管理上游快照、本仓库补丁与运行准备；各功能目录只导航到同一份源代码。
+**主运行入口**：[sage/orchestration](../../sage/orchestration/)；共享契约与调用控制：[types.py](../../sage/types.py)、[config.py](../../sage/config.py)、[runtime.py](../../sage/runtime.py)。
 
-- **输入**：固定的 CoI 上游快照、本仓库维护的补丁及本地准备目标。
-- **输出**：快照校验结果、应用补丁后的本地运行副本；不产出模型结果或研究结论。
-- **已实现的本地入口**：[coi_agent.py](coi_agent.py) 与 [coi_patches.json](coi_patches.json)。它们校验原始快照，按补丁准备被忽略的 `projects/` 目录；不导入/运行上游模块、不安装依赖、不联网、不调用模型。
+控制器组合发现、文献、构思、review 与实验设计，生成研究提案产物。offline 和 live 使用同一逻辑/解析器，差别是注入的模型与检索提供方；离线 fixture 不是绕开链路的静态结果。
 
-## 离线使用
+```bash
+python -m sage doctor
+python -m sage run --mode offline --topic "证据约束的研究构思" --output projects/sage-demo
+```
 
-在仓库根目录运行：
+## 运行职责
+
+- 以 `Paper`、`Evidence`、`Chain`、`Candidate`、`NoveltyAssessment`、`ExperimentPlan`、`RunResult` 命名 dataclass 传递数据，避免位置字段串位。
+- 限定查询改写、候选/链长度、新颖性再生成、评审轮数和重试次数。
+- 所有提供方调用经过统一计数、单次超时和总墙钟预算；失败/重试也消耗额度。最大输出 token 预留不是实际计费金额。
+- 严格解析阶段输出，保留错误、调用审计与不完整状态，不把格式失败标成研究成功。
+- 将提案、软件契约检查与未实现的 execution/writing、未进行的 scientific validation 分别标记。
+
+操作系统隔离、独立最终测试、可信身份审批、真实实验调度和金额结算仍未实现。详见[架构](../../docs/architecture.md)和[运行说明](../../docs/sage-runtime.md)。
+
+## 旧 CoI 归档准备路径
+
+[coi_agent.py](coi_agent.py) 与 [coi_patches.json](coi_patches.json) 保留兼容用途，**不是 SAGE 主运行路径**：
 
 ```bash
 python scripts/coi.py inspect
 python scripts/coi.py prepare --destination projects/coi-agent-runtime
 ```
 
-[CLI 入口](../../scripts/coi.py) 的 `inspect` 检查快照身份与文件完整性；`prepare` 先校验，再把修补副本写入新的私有子目录，并附来源与变更记录。已有目录不覆盖，目标必须位于 `projects/` 内；这一步没有执行上游代码。
+`inspect` 验证固定源码；`prepare` 创建新的、被忽略的私有修补副本，附来源与变更记录，不覆盖既有目录、不安装依赖、不调用 API、不执行上游。五个补丁仅修正原有局部问题，不能使整个上游流程变成安全执行器。其剩余风险见[归档说明](../../third_party/coi_agent/README.md)。
 
-当前五项维护补丁涉及链结果字段顺序、Azure 布尔配置、链长度参数拼写，以及空检索和格式异常时的新颖性判定。保留上游默认的单链设置；尚未实现总成本预算或所有循环的可靠终止机制，不提供无人值守运行入口。
+SAGE 不导入 [upstream/main.py](../../third_party/coi_agent/upstream/main.py) 或其模块。上游 `main.py` 的配置副作用、依赖和无限循环不会通过默认 import 混入 SAGE；来源仍以逐字节快照保留。
 
-## 源码与维护边界
-
-- [third_party/coi_agent/upstream](../../third_party/coi_agent/upstream/) 是集中保存的原始源码，保留 [LICENSE](../../third_party/coi_agent/upstream/LICENSE)，不直接修改。
-- [上游 main.py](../../third_party/coi_agent/upstream/main.py) 的流程是：配置/模型 → `DeepResearchAgent.generate_idea_with_chain()` → `generate_experiment()` → `improve_experiment()` / `ReviewAgent.review_experiment()` → `result.json`。
-- [agents.py](../../third_party/coi_agent/upstream/agents.py)、[检索器](../../third_party/coi_agent/upstream/searcher/sementic_search.py)、[LLM.py](../../third_party/coi_agent/upstream/LLM.py) 和 [prompts](../../third_party/coi_agent/upstream/prompts/) 共同构成上游流程。源代码已导入不代表依赖已安装或端到端可运行。
-- 原始源码的问题通过维护补丁修正于副本。离线检查只能验证其检查范围；不能据此宣称真实检索/模型服务已接通或补丁通过科研效果验证。
-
-上游 [README](../../third_party/coi_agent/upstream/README.md) 中的安装、服务启动与运行命令是来源材料，不是本仓库已执行的步骤。未来实际运行涉及 API 凭据、模型费用、外部检索、PDF 下载与解析服务，必须另行确认授权、依赖、预算和停止条件。`projects/` 的 Git 忽略规则也不能代替真实沙箱。
-
-## 参考与扩展
-
-已有流程规范见[研究工作流](../../docs/workflow.md)、[项目模板](../../templates/README.md)及[架构契约](../../docs/architecture.md)；工具/论文事实继续存放在 [catalog](../../catalog/README.md)。Agent Laboratory、AiiDA 和其他[编排工具参考](../../catalog/tools.md)尚未集成。
-
-**下一接入点**：先用受控小任务验证配置、依赖、输入输出、失败与预算，再把经人工审核的 CoI 产物映射到项目的文献、假设和设计草稿。自动实验与写作需独立实现，不能从 CoI 的方案生成能力推断出来。
-
-[返回模块索引](../README.md) · [实验执行边界](../execution/README.md)
+[迁移对照](../../docs/sage-migration.md) · [实验执行边界](../execution/README.md) · [模块索引](../README.md)

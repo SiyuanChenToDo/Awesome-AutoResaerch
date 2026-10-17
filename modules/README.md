@@ -1,35 +1,30 @@
-# 按研究功能导航
+# SAGE 功能模块
 
-从“找论文”到“写结论”按功能进入，具体项目与论文记录仍以 [catalog](../catalog/README.md) 为唯一资料目录。本目录提供职责、代码位置与产物映射，不复制 JSON 条目，也不把同一份上游代码拆成多份。
+SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研智能体）的实际运行包位于 [sage/](../sage/)。本目录说明每个模块的职责和来源；目录不再只是指向一个上游大文件。提示词和研究链逻辑按功能拆分，控制器组合各模块，运行时不导入 CoI 原始快照。
 
-## 模块地图
-
-| 模块 | 输入 → 输出 | 当前落地 |
+| 模块 | 输入 → 输出 | 实现状态 |
 |---|---|---|
-| [文献发现 discovery](discovery/README.md) | 问题、查询范围 → 候选论文与检索记录 | 已有离线目录搜索；导入 CoI 检索源码，在线能力未运行 |
-| [文献分析 literature](literature/README.md) | 论文/PDF → 证据卡、引用与想法链 | 已有阅读模板；导入 CoI PDF/引用链源码，未运行 |
-| [研究构思 ideation](ideation/README.md) | 文献链、研究问题 → 候选想法与可证伪假设 | 已有假设模板；导入 CoI 构思源码，未运行 |
-| [实验设计 experiment_design](experiment_design/README.md) | 想法、相关方法 → 方案草稿与冻结协议 | 已有协议检查；导入 CoI 方案生成源码，未运行 |
-| [实验执行 execution](execution/README.md) | 批准协议、代码、数据 → 原始运行与制品 | 已有记录模板；执行器待实现，CoI 无此 runner |
-| [工作流编排 orchestration](orchestration/README.md) | 上游快照、配置 → 校验报告与本地准备目录 | 维护离线 CoI 适配入口与补丁；不执行模型或联网流程 |
-| [评审与核验 review](review/README.md) | 想法、方案、证据 → 意见、核验记录与决定 | 已有检查表；导入 CoI 方案评审源码，未运行 |
-| [科研写作 writing](writing/README.md) | 审核后的声明与证据 → 可追溯稿件 | 已有大纲与声明模板；写作 runner 待实现，CoI 无此入口 |
+| [discovery](discovery/README.md) | 问题 → 查询、候选论文与引用关系 | 查询/改写逻辑；离线 fixtures 与可选 Semantic Scholar metadata adapter |
+| [literature](literature/README.md) | 论文证据 → 摘录、双向引用链 | 真实模块逻辑；保留 abstract-only / local article 范围 |
+| [ideation](ideation/README.md) | 文献链 → 趋势/实体、方向、候选与定稿 | 有界生成/再生成，空证据保持未知 |
+| [experiment_design](experiment_design/README.md) | 想法/相关文献/意见 → 方案与修订历史 | 方案生成与补充证据修订；不执行实验 |
+| [review](review/README.md) | 候选/方案/证据 → 新颖性、六维比较、评审与契约检查 | 模型评审和确定性结构核验；不是科学评价器 |
+| [orchestration](orchestration/README.md) | 配置/提供方 → 研究提案产物与调用记录 | 同一 offline/live 控制器，有界重试与调用/时间预算 |
+| [execution](execution/README.md) | 批准的协议 → 未来真实运行 | Protocol-only，runner 未实现 |
+| [writing](writing/README.md) | 审核过的证据 → 未来稿件 | Protocol-only，runner 未实现 |
 
-建议顺序：发现 → 文献分析 → 构思 → 实验设计 → 执行 → 核验 → 写作；编排横跨各阶段。每阶段的人工放行条件见[研究工作流](../docs/workflow.md)。
+## 代码、来源与测试分开看
 
-## 已有、已导入与待实现
+- [SAGE 运行包](../sage/)：维护中的代码、分模块提示词、类型契约和 provider 接口。离线模式用假提供方执行同一控制器，不把静态结果文件充当流程测试。
+- [CoI-Agent 原始快照](../third_party/coi_agent/upstream/)：固定提交、逐字节保留，供归因与审查；不属于默认运行 import 路径。
+- [旧归档准备器](orchestration/coi_agent.py)和[五个补丁](orchestration/coi_patches.json)：保留 inspect/prepare 兼容用途；与新 SAGE 运行包分离。
+- [迁移对照](../docs/sage-migration.md)：逐项列出上游方法、19 个提示词函数、模块归属与行为偏离。
+- [运行说明](../docs/sage-runtime.md)：离线/live 模式、凭据、可选本地文章输入和限制。
 
-- **已有本仓库能力**：目录检索、项目初始化、结构/链接检查，以及 [CoI 离线适配入口](orchestration/coi_agent.py)。离线准备不等于上游端到端运行。
-- **已导入上游源码**：[CoI-Agent 原始快照](../third_party/coi_agent/upstream/)，集中保存并保持原样。工作台维护的变更放在 [coi_patches.json](orchestration/coi_patches.json)，准备时应用到被忽略的 `projects/` 运行副本。
-- **待实现/未验证**：真实模型与检索服务的接通、受限实验执行、可靠预算与隔离、自动写作。本次未安装上游依赖、调用模型、下载论文或运行研究实验；方法名来自静态源码阅读。
-
-CoI 的 `experiment` 是生成的**实验方案文本**，不是训练、实验结果或可执行制品。模型判新与模型评审也不能代替独立证据核验。
+离线通过只能证明检查覆盖的软件行为。live 适配器的存在不能证明服务已实测；模型方案、模型评审和新颖性判断不能证明科学有效、全球首次或真实实验完成。
 
 ## 资料与项目状态
 
-- 查工具：[工具目录](../catalog/tools.md)；查论文：[论文目录](../catalog/papers.md)；查评测：[评测目录](../catalog/benchmarks.md)；查服务与资料入口：[其他资源](../catalog/resources.md)。
-- 看抽查依据：[verification.json](../catalog/verification.json)；看选型与任务状态：[curation.json](../catalog/curation.json)；看后续接入要求：[架构](../docs/architecture.md)与[路线图](../docs/roadmap.md)。
-- Agent Laboratory 保留为后续重点，尚未导入或集成。其他参考工具也不因出现在模块页而获得“已集成”状态。
-- autoresearch 保持按用户要求完成的**计划状态**，不重新加入复现队列；`not_run` / `not_integrated` 的运行与集成边界不变。
+资料目录仍由 [catalog](../catalog/README.md)管理。研究流程的人工门禁见[工作流](../docs/workflow.md)。Agent Laboratory 尚未导入或集成；autoresearch 保持用户指定的计划 `completed`，运行与集成仍是 `not_run` / `not_integrated`。
 
-[返回仓库首页](../README.md)
+[返回 SAGE 首页](../README.md)

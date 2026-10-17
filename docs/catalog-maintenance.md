@@ -1,4 +1,4 @@
-# 资料维护与可信度
+# SAGE 资料维护与可信度
 
 ## 三层分离
 
@@ -16,6 +16,8 @@
 
 ## 常见操作
 
+以下原始脚本继续兼容；也可使用 `python -m sage catalog ...`。目录是资源索引，与 SAGE 的实时文献检索或软件运行状态分开。
+
 ```bash
 python scripts/catalog.py search "PaperBench"
 python scripts/catalog.py search --kind tool --category hypothesis
@@ -30,6 +32,6 @@ python scripts/catalog.py validate
 
 ## 项目检查器的边界
 
-`research.py check-project` 检查项目文件/JSON、研究项目 ID、运行状态、重复 run ID；对已完成记录检查数值指标、关键字段、哈希格式；对终止记录检查带时区且有序的时间戳、非负有限消耗和币种。`--ready` 额外检查冻结计划字段、预算/种子、审批字段、评估器实际文件 SHA256，以及解析符号链接后的可写/保护路径交叠。
+`research.py check-project`（也可用 `python -m sage project check-project`）检查项目文件/JSON、研究项目 ID、运行状态、重复 run ID；对已完成记录检查数值指标、关键字段、哈希格式；对终止记录检查带时区且有序的时间戳、非负有限消耗和币种。`--ready` 额外检查冻结计划字段、预算/种子、审批字段、评估器实际文件 SHA256，以及解析符号链接后的可写/保护路径交叠。
 
 这些检查不会启动实验，也不验证审批人的真实身份、实际消费、运行记录所述结果的真实性、制品内容/存在性、历史协议的哈希对应、论断—运行引用或统计计算。`runs.jsonl` 当前由用户/未来执行器维护，追加式只是一项约定，尚无防改写或并发写锁。不要把一次格式通过当作实验审计完成。

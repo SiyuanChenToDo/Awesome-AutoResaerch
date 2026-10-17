@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run every offline scaffold check, without model APIs or full external workflow execution."""
+"""Run all SAGE offline checks, including the real controller with fake providers."""
 from pathlib import Path
 import subprocess
 import sys
@@ -38,7 +38,7 @@ def main():
     completed = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=ROOT, check=False)
     if completed.returncode:
         return completed.returncode
-    print("All offline scaffold checks passed. CoI source patches were unit-tested with local fakes; no complete upstream workflow, network verification, model API or experiments were run.")
+    print("All SAGE offline checks passed. The owned pipeline and live adapters were tested with fake providers; no live API calls, experiments or scientific validation were performed.")
     return 0
 
 

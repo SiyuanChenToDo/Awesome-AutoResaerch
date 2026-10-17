@@ -1,1 +1,1 @@
-"""Maintained research-workbench modules. Importing these never starts a workflow."""
+"""Maintained SAGE provenance modules. Importing these never starts a workflow."""

@@ -1,23 +1,16 @@
-# 研究构思 · ideation
+# SAGE 研究构思 · ideation
 
-**职责**：基于文献演进提出有区别、可检验的候选想法，再写成有反证条件的研究假设。
+**实现入口**：[sage/ideation](../../sage/ideation/) · [prompts.py](../../sage/ideation/prompts.py)
 
-- **输入**：研究问题、文献证据与想法链、已知限制、资源约束。
-- **输出**：候选想法、选择理由、创新对照、替代解释与反证条件，人工整理到 [hypotheses.md](../../templates/project/hypotheses.md)。
-- **已有**：假设模板与[工作流 G2](../../docs/workflow.md)；未验证模型生成质量或新颖性。
+将文献链综合为趋势和实体，生成未来方向、候选方法/动机/新颖性描述，再形成完整想法。候选使用 `Candidate` 命名契约，关联原始 `Chain`，保留失败的再生成尝试。
 
-## CoI 源码入口（已导入，未运行）
+- **输入**：研究问题、文献证据链、生成次数上限以及 review 模块。
+- **输出**：趋势/实体、方向、候选想法和检索范围内的新颖性状态；模型产生的 `human_considerations` 是待考虑因素，不是实际人类参与或批准记录。
+- **有限改进**：调用 [review](../review/README.md) 的新颖性检查；发现相似工作后带失败案例重新生成，次数有上限。空检索不等于新颖；用 `not_established` 保留未知。
+- **选择**：多候选由 review 做六维两两比较；分数是模型偏好，不是科学效应量或全球首次认证。
 
-- [agents.py](../../third_party/coi_agent/upstream/agents.py)：`deep_research_paper_with_chain()` 从文献链总结趋势、提出未来方向并生成想法；`check_novel()` / `get_check_novel_search_query()` 再检索相似工作。
-- `DeepResearchAgent.generate_idea_with_chain()` 聚合不同链的候选，通过同文件的 `judge_idea()` 和 [juder_prompts.py](../../third_party/coi_agent/upstream/prompts/juder_prompts.py) 中的 `get_judge_idea_all_prompt()` 做多维两两比较并选择一个候选。默认只有一条链，因此不发生跨链比较。上游变量名含 `elo`，实际代码累计比较得分，不应据此声称实现了标准 Elo 评级。
-- [deep_research_agent_prompts.py](../../third_party/coi_agent/upstream/prompts/deep_research_agent_prompts.py)：趋势、方向、想法及判新提示词。
+对应 CoI 的 `deep_research_paper_with_chain()` 中趋势、实体、未来方向、想法生成/定稿与再生成部分；原来内联在大方法中的逻辑已由 SAGE 模块承担。提示词函数保留来源可追溯性，拼写 `get_deep_generate_future_direciton_prompt` 作为既有函数标识保留。详见[迁移说明](../../docs/sage-migration.md)。
 
-`check_novel()` 在无检索结果时返回通过，不能当“全球首次”的证据；本仓库的 [维护补丁](../orchestration/coi_patches.json) 会在准备副本中将空检索或格式异常的判定改为报错停止；循环、失败处理与结果字段仍需审查。生成的 `human` 字段来自模型输出，不是实际人工参与记录。
+离线候选来自固定 fixture 回答，只验证控制流。真实研究仍需[工作流 G2](../../docs/workflow.md)：最近工作对照、替代解释和可证伪条件，人工整理到 [hypotheses.md](../../templates/project/hypotheses.md)。
 
-## 参考与扩展
-
-阅读[论文目录](../../catalog/papers.md)中的 Chain of Ideas、ResearchAgent 与 Can LLMs Generate Novel Research Ideas?；[工具目录](../../catalog/tools.md)的 SciAgentsDiscovery 仅作候选参考，未集成。研究证据标准见[精读路线](../../docs/reading-path.md)。
-
-**下一接入点**：保留全部候选和淘汰原因，将模型比较与人工选择分开；按检索覆盖、可行性及可证伪性评估，不把自评分升级为科学结论。
-
-[上一步：文献分析](../literature/README.md) · [下一步：实验设计](../experiment_design/README.md) · [返回模块索引](../README.md)
+[上一步：文献分析](../literature/README.md) · [下一步：实验设计](../experiment_design/README.md) · [模块索引](../README.md)

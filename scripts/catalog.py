@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 ROOT = Path(__file__).resolve().parents[1]
 LINK = re.compile(r"\[([^\]]+)\]\(([^\s)]+)\)")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
-STAGES = {"scope", "literature", "ideation", "implementation", "experimentation", "evaluation", "writing", "review", "memory"}
+STAGES = {"discovery", "experiment_design", "orchestration", "execution", "scope", "literature", "ideation", "implementation", "experimentation", "evaluation", "writing", "review", "memory"}
 CATEGORIES = {"foundation", "experiment-loop", "end-to-end", "domain-science", "literature", "infrastructure", "skills-writing", "hypothesis", "benchmark", "survey", "risk-governance", "curated-list", "paper-system", "industry", "community", "other"}
 SECTION_CATEGORY = {"2.1": "foundation", "2.2": "experiment-loop", "2.3": "end-to-end", "2.4": "domain-science", "2.5": "literature", "2.6": "curated-list", "2.7": "infrastructure", "2.8": "skills-writing", "2.9": "end-to-end", "2.10": "hypothesis", "2.11": "domain-science", "2.12": "curated-list", "3.1": "foundation", "3.2": "paper-system", "3.3": "benchmark", "3.4": "hypothesis", "3.5": "paper-system", "3.6": "survey", "3.7": "risk-governance", "5": "industry", "6": "community"}
 
