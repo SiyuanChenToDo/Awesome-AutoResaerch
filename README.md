@@ -6,6 +6,13 @@
 
 > 仓库地址保留原拼写 `Awesome-AutoResaerch`，展示名称使用 AutoResearch。
 
+## 当前项目计划（2026-10-17）
+
+- **已完成**：[karpathy/autoresearch](https://github.com/karpathy/autoresearch) 按用户要求标为计划任务完成，移出后续复现优先队列；保留历史资料与借鉴记录。
+- **接下来重点**：CoI-Agent（[Chain of Ideas 论文](https://arxiv.org/abs/2410.13185)）与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory)，先厘清各自独特机制、代码入口、模块功能与验证边界。
+
+这里的“已完成”是计划状态，不是独立运行或性能复现证明。运行核验仍为 `not_run`，本工作台集成仍为 `not_integrated`。具体状态与后续验收见[当前项目计划](docs/roadmap.md#当前项目计划2026-10-17)。
+
 ## 从这里开始
 
 1. 看 [研究超级工作流](docs/workflow.md)，明确每一步的输入、产物和人工放行条件。

@@ -1,7 +1,45 @@
 {
   "schema_version": 1,
-  "meaning": "Priorities P1/P2 are proposed adoption priority, not roadmap phases or empirical rankings. planned means no integration implemented.",
+  "meaning": "Priorities P1/P2 are proposed adoption priority, not roadmap phases or empirical rankings; excluded means removed from future reproduction priorities. current_reproduction_priorities alone defines the current focus; other entries remain background references. task_status is planning status, independent of runtime_verification_status and integration_status. planned integration means no integration implemented.",
+  "plan_updated_at": "2026-10-17",
+  "current_reproduction_priorities": [
+    "arxiv-2410-13185",
+    "github-samuelschmidgall-agentlaboratory-288ff23a9cda"
+  ],
   "entries": [
+    {
+      "id": "arxiv-2410-13185",
+      "project": "CoI-Agent / Chain of Ideas",
+      "stages": [
+        "literature",
+        "ideation"
+      ],
+      "priority": "P1",
+      "task_status": "planned",
+      "integration_status": "not_integrated",
+      "runtime_verification_status": "not_run",
+      "borrow": "当前重点：核对独特机制、代码入口、模块职责和输入输出，再决定借鉴边界。",
+      "caution": "本条关联已有论文记录；本次计划更新不宣称代码功能已核验或独立运行已完成。",
+      "related_ids": []
+    },
+    {
+      "id": "github-samuelschmidgall-agentlaboratory-288ff23a9cda",
+      "project": "Agent Laboratory",
+      "stages": [
+        "literature",
+        "experimentation",
+        "writing"
+      ],
+      "priority": "P1",
+      "task_status": "planned",
+      "integration_status": "not_integrated",
+      "runtime_verification_status": "not_run",
+      "borrow": "当前重点：核对独特机制、代码入口、模块职责和输入输出，再决定借鉴边界。",
+      "caution": "本次计划更新不宣称代码功能已核验或独立运行已完成；真实执行另需授权与预算。",
+      "related_ids": [
+        "arxiv-2501-04227"
+      ]
+    },
     {
       "id": "github-future-house-paper-qa-d901bca41431",
       "stages": [
@@ -19,8 +57,14 @@
         "implementation",
         "experimentation"
       ],
-      "priority": "P1",
-      "integration_status": "planned",
+      "priority": "excluded",
+      "previous_priority": "P1",
+      "task_status": "completed",
+      "completed_at": "2026-10-17",
+      "completion_basis": "user_requested_plan_completion",
+      "task_status_note": "按用户要求标为计划任务完成，并排除后续复现优先队列；不代表独立运行、性能复现或工作台集成已完成。",
+      "integration_status": "not_integrated",
+      "runtime_verification_status": "not_run",
       "borrow": "固定预算、狭窄可修改面、保留/丢弃循环。",
       "caution": "把训练预算扩展成全流程成本账本；不要只按单一指标选择。",
       "related_ids": []

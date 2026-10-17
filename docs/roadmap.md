@@ -2,6 +2,26 @@
 
 这是按验收条件推进的计划，不是交付日期承诺。功能的“已实现”仅指仓库内可检查的文件/脚本；外部论文或工具的存在不等于已接入。
 
+## 当前项目计划（2026-10-17）
+
+本节记录当前项目选择，独立于下方 P0–P4 的工作台功能阶段。
+
+| 项目 | 计划任务状态 | 当前安排 | 运行核验 / 工作台集成 |
+|---|---|---|---|
+| [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | `completed`，按用户要求完成 | 从后续复现优先队列排除；保留历史资料与借鉴记录 | `not_run` / `not_integrated` |
+| CoI-Agent（[Chain of Ideas](https://arxiv.org/abs/2410.13185)） | `planned` | 当前重点：独特机制、代码入口与模块功能 | `not_run` / `not_integrated` |
+| [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) | `planned` | 当前重点：独特机制、代码入口与模块功能 | `not_run` / `not_integrated` |
+
+**状态边界**：autoresearch 的 `completed` 来自用户对计划的明确决定，不表示本仓库已安装、独立运行、复现性能或完成集成。现有[核验记录](../catalog/verification.json)保持原范围，不因此升级。
+
+接下来只围绕 CoI-Agent 与 Agent Laboratory 整理：
+
+1. 固定代码版本，区分论文描述、README 自述和实际代码可见的功能。
+2. 标出入口、核心模块、输入输出、依赖与调用链，说明各自的独特机制。
+3. 列出最小验证步骤、资源与权限需求、预期产物和停止条件；真实运行另需明确授权与预算。
+
+本次仅更新计划，不添加未核验的代码能力或实验结果。机器可读的当前优先队列与任务状态见 [curation.json](../catalog/curation.json)；其他目录条目继续作为背景资料。
+
 ## P0：可搬走的研究包（本仓库起点）
 
 范围：中文工作流与架构、文献/假设/计划/声明/复盘模板、离线计划示例、资源目录和根目录 README 列明的初始化/检查工具。
