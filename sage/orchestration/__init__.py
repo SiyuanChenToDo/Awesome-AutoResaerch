@@ -60,8 +60,9 @@ async def run(topic, main_model, source, *, cheap_model=None, config=None, mode=
         if discussion:
             from copy import deepcopy
             import json
+            from ..discussion.context import compact_handoff
             planning_candidate = deepcopy(selected)
-            planning_candidate.idea += '\nDiscussion planning handoff: ' + json.dumps(discussion.ledger['plan_handoff'])
+            planning_candidate.idea += '\nDiscussion planning handoff: ' + json.dumps(compact_handoff(discussion.ledger['plan_handoff']))
         result.experiment = await design.generate(planning_candidate, topic)
         if discussion:
             discussion.bind_plan(result.experiment)
@@ -70,7 +71,7 @@ async def run(topic, main_model, source, *, cheap_model=None, config=None, mode=
             result.status = 'completed_with_uncertainty'
         runtime.event('orchestration.run', result.status, artifact_type='unexecuted_research_proposal')
     except SageError as error:
-        if discussion:
+        if discussion and discussion.ledger['synthesis'] is None:
             discussion.ledger['status'] = 'stopped' if error.code in ('budget_exceeded', 'no_evidence') else 'failed'
         result.status = 'stopped' if error.code in ('budget_exceeded', 'no_evidence') else 'failed'
         # Messages here originate from our own categorized errors, never provider bodies.
@@ -79,7 +80,7 @@ async def run(topic, main_model, source, *, cheap_model=None, config=None, mode=
         runtime.event('orchestration.run', result.status, error_code=error.code)
     result.audit = runtime.audit
     result.usage = dict(runtime.usage)
-    result.usage['elapsed_seconds'] = round(runtime.clock() - runtime.started, 6)
+    result.usage['elapsed_seconds'] = round(runtime.elapsed_before + runtime.clock() - runtime.started, 6)
     result.validation = audit_result(result, config)
     if not result.validation['contract_passed']:
         result.status = 'failed'

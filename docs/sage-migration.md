@@ -89,7 +89,7 @@ SAGE = **Scientific Agent for Grounded Exploration（基于证据探索的科研
 
 ### 传输与日期过滤取舍
 
-模型 SDK 禁用自动重试、重定向和环境代理自动继承；上游 `OPENAI_PROXY_URL` 行为未迁移。Semantic Scholar 使用固定官方 graph HTTPS 入口，不跟随重定向。时间范围过滤统一应用于发现、引用、判新与修订；低精度/缺日期记录无法证明落在窗口内时保守排除，不补造日期。
+模型 SDK 禁用自动重试、重定向和默认环境代理自动继承；现支持 `SAGE_USE_ENV_PROXY=true` 显式接入官方 HTTP CONNECT 环境代理，详见运行指南；上游 `OPENAI_PROXY_URL` 行为未迁移。Semantic Scholar 使用固定官方 graph HTTPS 入口，不跟随重定向。时间范围过滤统一应用于发现、引用、判新与修订；低精度/缺日期记录无法证明落在窗口内时保守排除，不补造日期。
 
 ### 离线验证与联网行为分开
 
@@ -106,3 +106,13 @@ python scripts/check.py
 产物、live 环境与 local article 格式见[运行说明](sage-runtime.md)。目录/项目原命令继续兼容，并通过 `python -m sage catalog ...` / `python -m sage project ...` 暴露。旧归档 inspect/prepare 继续存在；它与 SAGE 的模块化实现分别验证，不需要启动上游依赖。
 
 本次不改变其他工具状态：autoresearch 是用户指定的计划完成，仍 `not_run` / `not_integrated`；Agent Laboratory 的后续代码迭代和报告迁移现见[独立对照](agent-laboratory-migration.md)，不改变 CoI 本身的复现边界。后续科研效果验证应单独预注册基线、任务、预算与人工参与，而不是从软件检查通过推断。
+
+
+### arXiv 来源选择与非引文主题链（2026-10-17）
+
+新增自有 `sage/arxiv.py`，明确选择 `SAGE_PAPER_PROVIDER=arxiv` 后使用官方 Atom 元数据接口。
+固定 Agent Laboratory `papersolver.py:Arxiv` 调用 `tools.py:ArxivSearch`；已另行核对同一提交
+`d9017d90e329112d2a80b7712f37ee9094d2cd27` 的 tools.py：其采用 arxiv.Search、摘要搜索、
+有界重试和单独 PDF 下载。本实现不导入/执行上游、不安装其整体依赖、不采用自动 PDF 下载，
+也不把主题检索冒充 Semantic Scholar 引文图；详见运行指南的 topic_time 范围说明。
+上游原始快照未修改。arXiv 代码独立编写，保留现有 CoI 与 Agent Laboratory attribution。

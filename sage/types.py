@@ -11,10 +11,12 @@ class Paper:
     abstract: str = ""
     year: int | None = None
     url: str = ""
-    citation_count: int = 0
+    citation_count: int | None = 0
     article: dict[str, Any] | None = None
     evidence_scope: str = "abstract_only"
     publication_date: str | None = None
+    authors: tuple[str, ...] = ()
+    source_provider: str = "unspecified"
 
 
 @dataclass(frozen=True)
@@ -32,10 +34,15 @@ class Chain:
     trend: str
     entities: str
     stop_reasons: list[str] = field(default_factory=list)
+    relation: str = "citation_reference"
 
     @property
     def text(self) -> str:
-        return "\n\n".join(f"{i}.Paper:{e.paper.title} idea:{e.idea}" for i, e in enumerate(self.evidence))
+        prefix = ("TOPIC/TIME CHAIN: chronological thematic comparison only; no citation, reference, "
+                  "influence or historical dependency edges were retrieved. Do not claim one paper builds on another.\n"
+                  if self.relation == "topic_time" else "")
+        return prefix + "\n\n".join(f"{i}.Paper:{e.paper.title} date:{e.paper.publication_date} idea:{e.idea}"
+                                      for i, e in enumerate(self.evidence))
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,7 @@ class ExperimentPlan:
     proposal: str
     revisions: list[dict[str, Any]] = field(default_factory=list)
     status: str = "proposal_only"
+    design_contract: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -99,4 +107,8 @@ class PaperSource(Protocol):
 
 def paper_record(paper: Paper) -> dict[str, Any]:
     """Retrieval evidence without an unbounded duplicate of attached full text."""
-    return {name: getattr(paper, name) for name in ('paper_id', 'title', 'abstract', 'year', 'url', 'evidence_scope', 'publication_date')}
+    record = {name: getattr(paper, name) for name in ('paper_id', 'title', 'abstract', 'year', 'url', 'evidence_scope', 'publication_date')}
+    if paper.authors or paper.source_provider != 'unspecified':
+        record['authors'] = list(paper.authors)
+        record['source_provider'] = paper.source_provider
+    return record

@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import asdict
 import json
 import hashlib
-from ..errors import InvalidResponse, NoEvidence, SageError, BudgetExceeded
+from ..errors import InvalidResponse, ValidationError, NoEvidence, SageError, BudgetExceeded
 from ..types import NoveltyAssessment, paper_record
 from .prompts import prompt
 
@@ -17,36 +17,57 @@ def strict_object(text):
         out = {}
         for key, value in items:
             if key in out:
-                raise InvalidResponse('Duplicate discussion JSON key')
+                raise ValidationError('duplicate_key')
             out[key] = value
         return out
     try:
         value = json.loads(text, object_pairs_hook=pairs)
     except (ValueError, TypeError):
-        raise InvalidResponse('Discussion requires JSON object') from None
+        raise ValidationError('json_object') from None
     if not isinstance(value, dict):
-        raise InvalidResponse('Discussion requires JSON object')
+        raise ValidationError('json_object')
     return value
 
 
 def fields(value, schema):
     if set(value) != set(schema):
-        raise InvalidResponse('Discussion schema keys mismatch')
+        raise ValidationError('schema_keys')
     for key, kind in schema.items():
         item = value[key]
         if kind == 'text' and (not isinstance(item, str) or not item.strip()):
-            raise InvalidResponse('Discussion requires nonempty text')
+            raise ValidationError('nonempty_text', key)
         if kind == 'ids' and (not isinstance(item, list) or any(not isinstance(x, str) or not x for x in item) or len(item) != len(set(item))):
-            raise InvalidResponse('Discussion requires unique string IDs')
+            raise ValidationError('unique_ids', key)
         if kind == 'index' and type(item) is not int:
-            raise InvalidResponse('Discussion requires integer index')
+            raise ValidationError('integer_index', key)
         if kind == 'requirements' and not isinstance(item, list):
-            raise InvalidResponse('Discussion requirements must be a list')
+            raise ValidationError('list_required', key)
 
 
 def evidence_ids(value, allowed, *, required=True):
     if (required and not value) or not set(value) <= set(allowed):
-        raise InvalidResponse('Discussion evidence outside assigned source ownership')
+        raise ValidationError('source_ownership', 'evidence_ids')
+
+REVISION_SCHEMA = {'idea': 'text', 'evidence_ids': 'ids', 'accepted_critique_ids': 'ids',
+                   'rejected_critique_ids': 'ids', 'rationale': 'text', 'uncertainty': 'text'}
+
+def validate_revision(v, *, original_idea, own_evidence_ids, targeted, prior):
+    """Pure replayable validator. Never rewrites returned values."""
+    fields(v, REVISION_SCHEMA)
+    allowed = {c['critique_id']: c for c in targeted if c['status'] == 'supported'}
+    accepted, rejected = set(v['accepted_critique_ids']), set(v['rejected_critique_ids'])
+    if not accepted <= set(allowed) or accepted & rejected or accepted | rejected != {c['critique_id'] for c in targeted}:
+        raise ValidationError('revision_decisions', 'accepted_critique_ids')
+    adopted = {**prior, **{k: allowed[k] for k in accepted}}
+    evidence_ids(v['evidence_ids'], set(own_evidence_ids) | {e for c in adopted.values() for e in c['evidence_ids']})
+    if not accepted and v['idea'] != original_idea:
+        raise ValidationError('unchanged_idea', 'idea')
+    if accepted and v['idea'] == original_idea:
+        raise ValidationError('changed_idea', 'idea')
+    if any(c['requested_change'] not in v['idea'] for c in adopted.values()):
+        raise ValidationError('verbatim_requirement', 'idea')
+    if any(not set(c['evidence_ids']) <= set(v['evidence_ids']) for c in adopted.values()):
+        raise ValidationError('retained_evidence', 'evidence_ids')
 
 
 class Discussion:
@@ -62,7 +83,9 @@ class Discussion:
         text, digest = prompt(stage, payload, schema, version)
         self.runtime.event('discussion.prompt', 'recorded', task=stage, version=version, template_sha256=digest,
                            input_sha256=hashlib.sha256(text.encode()).hexdigest(), round=payload.get('round', 0),
-                           student_id=payload.get('student_id'))
+                           student_id=payload.get('student_id'), prompt_chars=len(text),
+                           original_payload_chars=len(json.dumps(payload, ensure_ascii=False)),
+                           context_protocol='sage.discussion.context.v1')
         self.ledger['prompt_history'].append({'stage': stage, 'version': version, 'template_sha256': digest,
             'input_sha256': hashlib.sha256(text.encode()).hexdigest(),
             'round': payload.get('round', 0), 'student_id': payload.get('student_id'),
@@ -106,7 +129,7 @@ class Discussion:
                            'target_id': critique['target_id'], 'target_candidate': snapshots[target]}
                 def validate(v):
                     if v['status'] not in ('supported', 'unknown'):
-                        raise InvalidResponse('Invalid critique status')
+                        raise ValidationError('critique_status', 'status')
                     evidence_ids(v['evidence_ids'], student['evidence_ids'], required=v['status'] == 'supported')
                 try:
                     value = await self.ask('critique', payload, {'status': 'text', 'evidence_ids': 'ids', 'issue': 'text',
@@ -128,21 +151,9 @@ class Discussion:
                            'critiques': targeted, 'prior_accepted_critiques': list(prior.values()), 'evidence_ids': sorted(available),
                            'peer_evidence': [snapshots[j]['chain']['evidence'] for j in range(count) if j != i]}
                 def validate(v):
-                    accepted, rejected = set(v['accepted_critique_ids']), set(v['rejected_critique_ids'])
-                    if not accepted <= set(allowed) or accepted & rejected or accepted | rejected != {c['critique_id'] for c in targeted}:
-                        raise InvalidResponse('Revision must decide all critiques and cannot accept unknown/failed critiques')
-                    adopted = {**prior, **{k: allowed[k] for k in accepted}}
-                    evidence_ids(v['evidence_ids'], set(student['evidence_ids']) | {e for c in adopted.values() for e in c['evidence_ids']})
-                    if not accepted and v['idea'] != candidates[i].idea:
-                        raise InvalidResponse('Unaccepted critique cannot change proposal')
-                    if accepted and v['idea'] == candidates[i].idea:
-                        raise InvalidResponse('Accepted critique requires a changed proposal')
-                    if any(c['requested_change'] not in v['idea'] for c in adopted.values()):
-                        raise InvalidResponse('Accepted critique change must appear verbatim in revised proposal')
-                    if any(not set(c['evidence_ids']) <= set(v['evidence_ids']) for c in adopted.values()):
-                        raise InvalidResponse('Accepted critique must retain its cited evidence')
-                value = await self.ask('revise', payload, {'idea': 'text', 'evidence_ids': 'ids', 'accepted_critique_ids': 'ids',
-                      'rejected_critique_ids': 'ids', 'rationale': 'text', 'uncertainty': 'text'}, validate)
+                    validate_revision(v, original_idea=candidates[i].idea,
+                                      own_evidence_ids=student['evidence_ids'], targeted=targeted, prior=prior)
+                value = await self.ask('revise', payload, REVISION_SCHEMA, validate)
                 student['revisions'].append({'round': number, 'previous_idea': candidates[i].idea, **value})
                 student['accepted_critique_ids'].extend(value['accepted_critique_ids'])
                 candidates[i].idea = value['idea']
@@ -153,21 +164,21 @@ class Discussion:
                    'critiques': self.ledger['critiques']}
         def validate(v):
             if not 0 <= v['selected_index'] < count:
-                raise InvalidResponse('Postdoc selection outside student candidates')
+                raise ValidationError('selection_range', 'selected_index')
             accepted = self.ledger['students'][v['selected_index']]['accepted_critique_ids']
             if set(v['accepted_critique_ids']) != set(accepted):
-                raise InvalidResponse('Postdoc must preserve selected student accepted critiques')
+                raise ValidationError('accepted_critique_set', 'accepted_critique_ids')
             seen = []
             for requirement in v['requirements']:
                 if not isinstance(requirement, dict):
-                    raise InvalidResponse('Malformed plan requirement')
+                    raise ValidationError('requirement_shape', 'requirements')
                 fields(requirement, {'critique_id': 'text', 'requirement': 'text'})
                 matching = next((c for c in self.ledger['critiques'] if c['critique_id'] == requirement['critique_id']), None)
                 if matching is None or requirement['requirement'] != matching['requested_change']:
-                    raise InvalidResponse('Plan requirement must preserve canonical accepted change')
+                    raise ValidationError('canonical_requirement', 'requirements')
                 seen.append(requirement['critique_id'])
             if len(seen) != len(set(seen)) or set(seen) != set(accepted):
-                raise InvalidResponse('Every accepted critique requires one traceable planning requirement')
+                raise ValidationError('requirements_coverage', 'requirements')
         value = await self.ask('synthesize', payload, {'selected_index': 'index', 'rationale': 'text',
                       'accepted_critique_ids': 'ids', 'requirements': 'requirements', 'uncertainty': 'text'}, validate)
         self.ledger['synthesis'] = value

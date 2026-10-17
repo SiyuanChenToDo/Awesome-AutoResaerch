@@ -207,12 +207,17 @@ class HybridDiscussionTests(unittest.IsolatedAsyncioTestCase):
         generation_prompt = next(prompt for stage, prompt in model.requests if stage == 'experiment_design.generate')
         serialized = generation_prompt.split('Discussion planning handoff: ', 1)[1]
         delivered, _ = json.JSONDecoder().raw_decode(serialized)
-        self.assertEqual(delivered['source_map'], handoff['source_map'])
+        restored = {}
+        for key, source in delivered['source_map'].items():
+            restored[key] = {k: v for k, v in source.items() if k != 'evidence_refs'}
+            restored[key]['evidence'] = [delivered['evidence_registry'][ref] for ref in source['evidence_refs']]
+        self.assertEqual(restored, handoff['source_map'])
+        self.assertEqual(delivered['requirements'], handoff['requirements'])
         self.assertEqual(set(delivered['source_map']), set(handoff['accepted_critique_ids']))
         students = {student['student_id']: student for student in result.discussion['students']}
         selected_ids = {entry.paper.paper_id for entry in result.candidates[result.selected_index].chain.evidence}
         peer_only_ids = set()
-        for source in delivered['source_map'].values():
+        for source in restored.values():
             author = students[source['author_id']]
             original = {entry['paper']['paper_id']: entry for entry in author['original_candidate']['chain']['evidence']}
             self.assertEqual([card['paper']['paper_id'] for card in source['evidence']], source['evidence_ids'])

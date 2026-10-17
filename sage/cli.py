@@ -46,14 +46,19 @@ def load_articles(path):
 
 
 def doctor():
-    from .providers import OpenAIConfig
+    from .providers import OpenAIConfig, paper_source_from_env
     config_errors = []
     for role in ('main', 'cheap'):
         try:
             OpenAIConfig.from_env(role=role)
         except ConfigurationError as error:
             config_errors.append(str(error))
-    report = {'product': 'SAGE', 'version': __version__, 'offline_ready': True,
+    try:
+        source_name = type(paper_source_from_env()).__name__
+    except ConfigurationError as error:
+        source_name = 'invalid'
+        config_errors.append(str(error))
+    report = {'paper_source': source_name, 'product': 'SAGE', 'version': __version__, 'offline_ready': True,
               'python': f'{sys.version_info.major}.{sys.version_info.minor}',
               'openai_sdk_installed': importlib.util.find_spec('openai') is not None,
               'live_configuration_errors': config_errors,
@@ -86,22 +91,37 @@ def save_result(destination, result, config):
 
 async def execute(args, config, articles):
     models = []
+    if getattr(args, 'cache_only_retrieval', False) and not getattr(args, 'resume', None):
+        raise ConfigurationError('Cache-only retrieval requires an explicit checkpoint resume')
     if args.mode == 'offline':
         model, source = FixtureModel(), FixtureSource()
         cheap = model
     else:
         if not args.allow_live:
             raise ConfigurationError('Live mode requires --allow-live; it sends topic/evidence to configured APIs and may incur model charges')
-        from .providers import OpenAIModel, SemanticScholarSource
+        from .providers import OpenAIModel, paper_source_from_env
         model = OpenAIModel.from_env(role='main', timeout=config.request_timeout_seconds)
         cheap = OpenAIModel.from_env(role='cheap', timeout=config.request_timeout_seconds)
         if importlib.util.find_spec('openai') is None:
             raise ConfigurationError('Live mode requires the optional openai package; see README live setup')
-        source = SemanticScholarSource.from_env(timeout=config.request_timeout_seconds)
+        source = paper_source_from_env(timeout=config.request_timeout_seconds)
         models = [model, cheap]
     destination = output_directory(args.output)
+    from .checkpoints import Checkpoint, identity
+    from .runtime import Runtime
+    checkpoint = Checkpoint(destination / 'checkpoint.json',
+        identity(args.topic, args.mode, config, articles, model, cheap, source),
+        resume=getattr(args, 'resume', None))
+    runtime = Runtime(model, cheap, source, config, checkpoint=checkpoint,
+        cache_only_retrieval=getattr(args, 'cache_only_retrieval', False),
+        allow_incomplete_novelty=getattr(args, 'allow_incomplete_novelty', False),
+        retry_uncertain=getattr(args, 'retry_uncertain', False),
+        retain_rejected_responses=getattr(args, 'retain_rejected_responses', False))
+    runtime.event('recovery.policy', 'configured',
+        resumed=bool(getattr(args, 'resume', None)), cache_only_retrieval=runtime.cache_only_retrieval,
+        allow_incomplete_novelty=runtime.allow_incomplete_novelty, retry_uncertain=runtime.retry_uncertain, retain_rejected_responses=runtime.retain_rejected_responses)
     try:
-        result = await run(args.topic, model, source, cheap_model=cheap, config=config, mode=args.mode, articles=articles)
+        result = await run(args.topic, model, source, cheap_model=cheap, config=config, mode=args.mode, articles=articles, runtime=runtime)
         save_result(destination, result, config)
         print(json.dumps({'product': 'SAGE', 'mode': result.mode, 'status': result.status, 'output': str(destination),
                           'candidates': len(result.candidates), 'usage': result.usage, 'validation': result.validation,
@@ -113,6 +133,8 @@ async def execute(args, config, articles):
 
 
 async def execute_laboratory(args, config, articles):
+    if any(getattr(args, name, False) for name in ('resume', 'cache_only_retrieval', 'allow_incomplete_novelty', 'retry_uncertain', 'retain_rejected_responses')):
+        raise ConfigurationError('Checkpoint recovery currently supports proposal run only, not laboratory execution')
     from .execution.contracts import EvaluationContract
     from .execution.fixtures import LaboratoryFixtureModel, TrustedFixtureBackend, fixture_contract
     from .orchestration.laboratory import run_laboratory
@@ -155,10 +177,10 @@ async def execute_laboratory(args, config, articles):
     else:
         if not args.allow_live:
             raise ConfigurationError('Live mode requires --allow-live; model calls transmit data and may incur charges')
-        from .providers import OpenAIModel, SemanticScholarSource
+        from .providers import OpenAIModel, paper_source_from_env
         model = OpenAIModel.from_env(role='main', timeout=config.request_timeout_seconds)
         cheap = OpenAIModel.from_env(role='cheap', timeout=config.request_timeout_seconds)
-        source = SemanticScholarSource.from_env(timeout=config.request_timeout_seconds)
+        source = paper_source_from_env(timeout=config.request_timeout_seconds)
         models = [model, cheap]
     destination = output_directory(args.output)
     try:
@@ -202,6 +224,11 @@ def main(argv=None):
     runner.add_argument('--output', type=Path, default=Path('projects/sage-run'))
     runner.add_argument('--allow-live', action='store_true')
     runner.add_argument('--config', type=Path, help='JSON RunConfig overrides; never credentials')
+    runner.add_argument('--resume', type=Path, help='Explicit matching checkpoint.json; keeps spent budgets and exact-input successful results')
+    runner.add_argument('--cache-only-retrieval', action='store_true', help='Never issue new paper requests; cache misses remain unavailable')
+    runner.add_argument('--allow-incomplete-novelty', action='store_true', help='Explicitly continue with unknown novelty after transient retrieval failures; never bypass missing chain evidence')
+    runner.add_argument('--retain-rejected-responses', action='store_true', help='Retain bounded untrusted rejected model replies privately in checkpoint, never in public audit logs')
+    runner.add_argument('--retry-uncertain', action='store_true', help='Permit another paid attempt after an ambiguous in-flight checkpoint request')
     runner.add_argument('--articles', type=Path, help='Local article JSON by stable paper ID/title')
     for name in ('max-chain-length', 'min-chain-length', 'max-candidates', 'max-model-calls', 'max-search-calls', 'refinement-rounds'):
         runner.add_argument('--' + name, type=int, default=None)

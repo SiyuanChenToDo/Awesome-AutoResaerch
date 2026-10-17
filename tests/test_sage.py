@@ -271,7 +271,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(first.returncode, 0, first.stderr)
             result = json.loads((output / 'result.json').read_text())
             self.assertEqual(result['schema_version'], 'sage.run.v1')
-            self.assertEqual(set(x.name for x in output.iterdir()), {'result.json', 'config.json', 'audit.jsonl'})
+            self.assertEqual(set(x.name for x in output.iterdir()), {'result.json', 'config.json', 'audit.jsonl', 'checkpoint.json'})
             before = (output / 'result.json').read_bytes()
             second = self.cli('run', '--output', output)
             self.assertEqual(second.returncode, 2)

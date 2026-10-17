@@ -16,6 +16,7 @@ import asyncio
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
+from functools import partial
 import http.client
 import importlib
 import json
@@ -89,6 +90,43 @@ def _https_endpoint(value: str | None, name: str) -> str | None:
     return value
 
 
+def _proxy_url(value: str | None) -> str | None:
+    """Only credential-free HTTP CONNECT proxies; origin TLS stays verified."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ConfigurationError("Environment proxy must be a credential-free HTTP CONNECT URL")
+    try:
+        parts = urlsplit(value)
+        valid = (parts.scheme == "http" and bool(parts.hostname)
+                 and parts.username is None and parts.password is None
+                 and parts.path in {"", "/"} and not parts.query and not parts.fragment
+                 and not any(ord(char) < 33 or ord(char) == 127 for char in value))
+        port = parts.port
+        valid = valid and (port is None or 1 <= port <= 65535)
+    except (ValueError, TypeError):
+        valid = False
+    if not valid:
+        raise ConfigurationError("Environment proxy must be a credential-free HTTP CONNECT URL")
+    return value
+
+
+def _environment_proxy(env: Mapping[str, str]) -> str | None:
+    # Explicit consent avoids silently forwarding secrets via ambient proxies.
+    # Do not honor NO_PROXY: opt-in must never silently fall back to direct IO.
+    if not parse_bool(_setting(env, "SAGE_USE_ENV_PROXY", default="false"),
+                      name="SAGE_USE_ENV_PROXY"):
+        return None
+    upper = _setting(env, "HTTPS_PROXY")
+    lower = _setting(env, "https_proxy")
+    if upper and lower and upper != lower:
+        raise ConfigurationError("Conflicting HTTPS_PROXY and https_proxy settings")
+    value = upper or lower
+    if value is None:
+        raise ConfigurationError("SAGE_USE_ENV_PROXY requires HTTPS_PROXY or https_proxy")
+    return _proxy_url(value)
+
+
 def _provider_error(error: Exception, provider: str) -> ProviderError:
     """Never interpolate provider bodies, URLs, prompts, or credentials."""
     status = getattr(error, "status_code", None)
@@ -119,8 +157,10 @@ class OpenAIConfig:
     embedding_api_version: str | None = None
     provider: str = "openai"
     deepseek_thinking: str = "disabled"
+    proxy_url: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        _proxy_url(self.proxy_url)
         if self.provider not in ("openai", "deepseek"):
             raise ConfigurationError("SAGE_MODEL_PROVIDER must be openai or deepseek")
         if self.deepseek_thinking not in ("enabled", "disabled"):
@@ -174,7 +214,8 @@ class OpenAIConfig:
         return cls(model=model, is_azure=is_azure, api_key=key, endpoint=endpoint,
                    api_version=version, embedding_model=embedding_model,
                    embedding_endpoint=embedding_endpoint, embedding_api_key=embedding_key,
-                   embedding_api_version=embedding_version, provider=provider, deepseek_thinking=thinking)
+                   embedding_api_version=embedding_version, provider=provider, deepseek_thinking=thinking,
+                   proxy_url=_environment_proxy(env))
 
 
 class OpenAIModel:
@@ -231,8 +272,9 @@ class OpenAIModel:
                                  or getattr(sdk, "DefaultAsyncHttpxClient", None))
             if transport_factory is None:
                 raise ValueError
+            proxy_options = {"proxy": self.config.proxy_url} if self.config.proxy_url else {}
             kwargs["http_client"] = transport_factory(
-                timeout=self.timeout, follow_redirects=False, trust_env=False)
+                timeout=self.timeout, follow_redirects=False, trust_env=False, **proxy_options)
             return factory(**kwargs)
         except Exception:
             raise ConfigurationError("Could not initialize the configured model client") from None
@@ -269,12 +311,18 @@ class OpenAIModel:
         except Exception as error:
             raise _provider_error(error, "Model provider") from None
         try:
+            usage = getattr(reply, 'usage', None)
+            self.last_usage = {key: getattr(usage, key, None) for key in
+                               ('prompt_tokens', 'completion_tokens', 'total_tokens')}
             choice = reply.choices[0]
             content = choice.message.content
             finish_reason = getattr(choice, "finish_reason", None)
             refusal = getattr(choice.message, "refusal", None)
         except (AttributeError, IndexError, TypeError):
             raise InvalidResponse("Model provider returned an invalid completion") from None
+        if finish_reason == "length":
+            from .errors import TruncatedResponse
+            raise TruncatedResponse("Model completion reached output limit")
         if refusal or (finish_reason is not None and finish_reason != "stop"):
             raise InvalidResponse("Model provider returned a refused, incomplete, or non-text completion")
         if not isinstance(content, str) or not content.strip() or len(content) > 1_000_000:
@@ -337,18 +385,55 @@ class HTTPResponse:
     """Injected transport result. Never store or log raw non-success bodies."""
     status: int
     body: bytes = field(repr=False)
+    retry_after_seconds: float | None = None
+
+
+def _retry_after(value):
+    """Preserve bounded header metadata, never response bodies or credential headers."""
+    if not isinstance(value, str) or len(value) > 100:
+        return None
+    try:
+        seconds = float(value) if value.strip().isdigit() else None
+        if seconds is None:
+            from email.utils import parsedate_to_datetime
+            seconds = parsedate_to_datetime(value).timestamp() - time.time()
+        return max(0.0, seconds) if math.isfinite(seconds) else None
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 Transport = Callable[[str, Mapping[str, str], float, int], HTTPResponse]
 
 
-def _https_request(url: str, headers: Mapping[str, str], timeout: float, max_bytes: int) -> HTTPResponse:
-    """One verified-TLS GET, no redirects/proxies, bounded body and read deadline."""
+def _https_request(url: str, headers: Mapping[str, str], timeout: float, max_bytes: int,
+                   *, proxy_url: str | None = None) -> HTTPResponse:
+    """One verified-TLS GET, optional CONNECT, no redirects, bounded body/deadline."""
     parts = urlsplit(url)
     if parts.scheme != "https" or parts.netloc != "api.semanticscholar.org" or not parts.path.startswith("/graph/v1/"):
         raise ConfigurationError("Paper requests must use the official Semantic Scholar graph API")
+    return _metadata_https_request(url, headers, timeout, max_bytes, proxy_url=proxy_url)
+
+
+def _metadata_https_request(url: str, headers: Mapping[str, str], timeout: float, max_bytes: int,
+                            *, proxy_url: str | None = None) -> HTTPResponse:
+    """Shared bounded transport; only two fixed metadata endpoints are allowed."""
+    parts = urlsplit(url)
+    allowed = ((parts.netloc == "api.semanticscholar.org" and parts.path.startswith("/graph/v1/"))
+               or (parts.netloc == "export.arxiv.org" and parts.path == "/api/query"))
+    if parts.scheme != "https" or not allowed or parts.fragment:
+        raise ConfigurationError("Unapproved paper metadata endpoint")
+    if parts.netloc == "export.arxiv.org" and any(k.lower() not in {"accept", "user-agent"} for k in headers):
+        raise ConfigurationError("arXiv metadata transport does not accept credential headers")
     deadline = time.monotonic() + timeout
-    connection = http.client.HTTPSConnection("api.semanticscholar.org", timeout=timeout)
+    proxy_url = _proxy_url(proxy_url)
+    if proxy_url:
+        proxy = urlsplit(proxy_url)
+        connection = http.client.HTTPSConnection(proxy.hostname, proxy.port or 80, timeout=timeout)
+        # HTTPSConnection wraps TLS for the tunnel destination, verifying its name.
+        # API headers are sent only after CONNECT and TLS succeed.
+        connection.set_tunnel(parts.hostname, 443)
+    else:
+        connection = http.client.HTTPSConnection(parts.hostname, timeout=timeout)
     try:
         connection.connect()
         connection_socket = connection.sock
@@ -364,7 +449,7 @@ def _https_request(url: str, headers: Mapping[str, str], timeout: float, max_byt
         remaining()
         response = connection.getresponse()
         if response.status != 200:
-            return HTTPResponse(response.status, b"")
+            return HTTPResponse(response.status, b"", _retry_after(response.getheader("Retry-After")))
         declared_length = response.getheader("Content-Length")
         if declared_length is not None:
             try:
@@ -442,7 +527,8 @@ class SemanticScholarSource:
     """
 
     def __init__(self, api_key: str | None = None, *, timeout: float = 20.0,
-                 max_response_bytes: int = 2_000_000, transport: Transport | None = None) -> None:
+                 max_response_bytes: int = 2_000_000, transport: Transport | None = None,
+                 proxy_url: str | None = None) -> None:
         self.timeout = _timeout(timeout)
         if type(max_response_bytes) is not int or not 1 <= max_response_bytes <= 10_000_000:
             raise ConfigurationError("Paper response byte limit must be from 1 to 10000000")
@@ -450,14 +536,16 @@ class SemanticScholarSource:
             raise ConfigurationError("Paper API key must be a valid header value")
         self._api_key = api_key
         self.max_response_bytes = max_response_bytes
-        self._transport = transport or _https_request
+        _proxy_url(proxy_url)
+        self._transport = transport or (partial(_https_request, proxy_url=proxy_url)
+                                        if proxy_url else _https_request)
         self.request_count = 0
 
     @classmethod
     def from_env(cls, *, env: Mapping[str, str] | None = None, **kwargs: Any) -> "SemanticScholarSource":
         env = os.environ if env is None else env
         key = _setting(env, "SAGE_SEMANTIC_SCHOLAR_API_KEY", "SEMANTIC_SCHOLAR_API_KEY", "SEMENTIC_SEARCH_API_KEY")
-        return cls(api_key=key, **kwargs)
+        return cls(api_key=key, proxy_url=_environment_proxy(env), **kwargs)
 
     @staticmethod
     def _limit(limit: int) -> int:
@@ -482,6 +570,9 @@ class SemanticScholarSource:
         if not isinstance(reply, HTTPResponse) or type(reply.status) is not int:
             raise InvalidResponse("Paper transport returned an invalid response")
         if reply.status != 200:
+            if reply.status == 429:
+                from .errors import RateLimited
+                raise RateLimited("Paper provider rate limited (HTTP 429)", reply.retry_after_seconds)
             if reply.status in _TRANSIENT_STATUSES or 500 <= reply.status <= 599:
                 raise TransientProviderError(f"Paper provider temporarily unavailable (HTTP {reply.status})")
             raise ProviderError(f"Paper provider request rejected (HTTP {reply.status})")
@@ -558,3 +649,15 @@ class SemanticScholarSource:
                                       {"limit": limit, "fields": _PAPER_FIELDS})
         return self._papers(payload["data"], limit=limit,
                             nested="citingPaper" if relation == "citations" else "citedPaper")
+
+
+def paper_source_from_env(*, env=None, **kwargs):
+    """Explicit source selection; Semantic Scholar remains the default."""
+    env = os.environ if env is None else env
+    provider = _setting(env, "SAGE_PAPER_PROVIDER", default="semantic_scholar")
+    if provider == "semantic_scholar":
+        return SemanticScholarSource.from_env(env=env, **kwargs)
+    if provider == "arxiv":
+        from .arxiv import ArxivSource
+        return ArxivSource.from_env(env=env, **kwargs)
+    raise ConfigurationError("SAGE_PAPER_PROVIDER must be semantic_scholar or arxiv")

@@ -14,7 +14,13 @@ class Ideation:
 
     async def generate(self, chain, topic):
         entities = [e.entities for e in chain.evidence]
-        response = await self.runtime.ask('ideation.trend', get_deep_trend_idea_chains_prompt(chain.text, entities, topic), ('trend',))
+        trend_prompt = get_deep_trend_idea_chains_prompt(chain.text, entities, topic)
+        if chain.relation == 'topic_time':
+            trend_prompt = (f'Topic: {topic}. Compare these dated, thematically retrieved abstracts: {chain.text}. '
+                            f'Entities: {entities}. Describe similarities, differences and evidence gaps only. '
+                            'No citation graph was retrieved; do not assert influence, causal progression, '
+                            'or that one paper builds on another. Output <trend>comparison</trend>.')
+        response = await self.runtime.ask('ideation.trend', trend_prompt, ('trend',))
         chain.trend = response['trend']
         prompt = f'Topic: {topic}. Merge, simplify and deduplicate these source-grounded entities: {entities}. Output <entities>cleaned entities</entities>.'
         response = await self.runtime.ask('ideation.entities', prompt, ('entities',))

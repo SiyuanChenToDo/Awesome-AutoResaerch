@@ -164,10 +164,25 @@ JSON 可覆盖 `max_chain_length`、`min_chain_length`、`max_candidates`、`max
 - 失败与重试计入模型/检索请求额度；SDK 自身重试关闭，避免层层叠加。
 - 输出 token 按单次最大值预留；并非 provider 的实际 token 账单，也不含精确输入/embedding 金额。
 - 每次调用受请求超时与剩余总墙钟时间约束；提供方另有响应大小限制。没有无限“直到新颖”或递归 429 重试。
-- Semantic Scholar 适配器只访问官方 graph HTTPS endpoint，不追随重定向，不访问论文中的下载 URL。模型 SDK 的重定向和环境代理自动继承也关闭；原 `OPENAI_PROXY_URL` 行为未迁移，需代理的网络环境不能假定兼容。
+- Semantic Scholar 适配器只访问官方 graph HTTPS endpoint，不追随重定向，不访问论文中的下载 URL。模型 SDK 的重定向和环境代理自动继承默认关闭；可按下节显式启用受限环境代理。原 `OPENAI_PROXY_URL` 行为未迁移。
 - 提供方错误归类，避免在日志中原样输出响应体、凭据或秘密 URL；项目产物本身仍可能包含敏感研究内容。
 
 这些是应用层限制，不是 OS/容器沙箱、独立权限域、金融预算保证、可恢复远端任务队列或提示注入安全证明。原 `run` 不执行实验；`laboratory` 可显式使用后文的执行后端，Docker 适配器尚未完成真实容器实测。
+
+### 官方环境代理：显式 opt-in
+
+默认禁用环境代理自动继承，避免未审阅的环境变量悄悄改变模型凭据与研究内容的传输路径。在执行环境要求使用官方代理时，运行 live 前设置：
+
+```bash
+export SAGE_USE_ENV_PROXY=true
+# HTTPS_PROXY 由平台安全配置提供；不复制或输出代理 URL、密钥。
+```
+
+模型（包括 Azure、DeepSeek 和独立 embedding）及 Semantic Scholar 两条通路均读取 `HTTPS_PROXY` 或 `https_proxy`，并在创建配置时固定。两者同时存在但值不同、缺少代理、开关值无效或 URL 不受支持时，配置失败；不会回退直连。只支持无用户名/密码、无查询/片段/路径的 `http://host:port` CONNECT 代理。`https://` 代理、SOCKS 和带凭据代理暂不支持，会明确拒绝，不能通过改写地址绕过平台策略。
+
+HTTP 是连接代理的协议；目标请求始终在 CONNECT 隧道内使用经过证书及目标主机名验证的 HTTPS。模型仍设置 `trust_env=False`，仅显式传入代理参数；检索通过标准库 CONNECT，API 凭据只在 TLS 建立后发给目标。不会继承 `NO_PROXY`、`ALL_PROXY`、其他端点或环境 TLS 覆盖，也不关闭 TLS 校验、不跟随重定向、不改变调用/超时/响应大小限制。平台必须已提供受信任的系统 CA；此开关不安装证书、配置代理或授予网络权限。
+
+代理地址不进入配置 repr 或项目日志。代理拒绝仍是失败；此兼容功能不能修复平台 allowlist 或 Network secret 未生效。新增回归测试使用假 SDK/连接和真实标准库 TLS 配置检查，不证明真实代理、SDK 或认证已验证。
 
 ## 6. 兼容工具
 
@@ -211,3 +226,76 @@ python -m sage laboratory --mode offline --discussion-mode none --output project
 默认 `none` 保持原流程；`run` 也支持同样参数。可选 `--discussion-students 2`（2–4）、`--discussion-rounds 1`（1–3）、`--discussion-prompt-version v2`（v1/v2）。配置 JSON 使用对应下划线字段。学生数不能超过 `max_candidates`，实际独立来源不足时停止，不能复制一名学生。所有角色与后续 laboratory 阶段共享总预算。
 
 讨论产物在 `proposal.discussion`（提案入口则为 `discussion`），包括原始版本、意见与证据所有权、接受／拒绝、模板版本与哈希，以及实验交接。未知／失败意见不自动接受；来源 ID 检查并不证明意见科学正确。相同模型的多个角色不是独立专家。完整流程、消融与验证边界见 [CoI × Agent Laboratory 讨论指南](coi-laboratory-discussion.md)。
+
+
+## 可选 arXiv 元数据检索（显式启用）
+
+`SAGE_PAPER_PROVIDER=arxiv` 选择官方 `https://export.arxiv.org/api/query`；默认仍是
+`semantic_scholar`。`run` 与 `laboratory` 共用此选择，`doctor` 显示选择结果。
+官方代理环境同时设置 `SAGE_USE_ENV_PROXY=true`，保持平台代理变量不变。
+仅允许固定 HTTPS 元数据端点、不跟随重定向、不携带任何模型或检索凭据、
+不下载 PDF。代理拒绝不会回退直连或其他主机。
+
+```bash
+export SAGE_PAPER_PROVIDER=arxiv SAGE_USE_ENV_PROXY=true
+python -m sage doctor
+python -m sage run --mode live --allow-live --discussion-mode hybrid \
+  --discussion-students 2 --discussion-rounds 1 --max-candidates 2 \
+  --topic "Your approved research question" --output projects/arxiv-hybrid
+```
+
+来源保留 arXiv 稳定 ID（去除版本用于去重）、含版本 URL、题名、作者、首次发表日期和摘要；
+阅读范围为 `abstract_only`，未知引用次数为 null，不认证同行评审或下载全文。
+模型查询按最多 12 个非停用词转换为 `all:` 字面词 AND 查询，提示模型输出 2–4 个关键词。
+日期窗口编码为 submittedDate，并对实际元数据保守复核；有界结果为空仍是未知。
+
+arXiv API 不提供 citation/reference graph：此选择显式改用 `Chain.relation=topic_time`。
+锚点题名词 OR 查询提供主题近邻，再经原有词项重排与模型相关性判断筛选，按日期排序。
+这些不是引用边、方法继承或因果历史；结构产物、审计和模型提示均标记此区别。
+`related(... citations/references ...)` 直接报不支持，绝不伪造引文。讨论仍需两个具有
+独有来源的候选，来源不足按原停止规则处理。该降级是对 CoI 图链方法的明确偏离。
+
+遵循 [官方 API 使用条款](https://info.arxiv.org/help/api/tou.html)：同一进程所有 arXiv
+实例串行访问，前一请求结束至少 3 秒才发下一次（失败同样计时）。等待和请求计入原时限，
+取消异步等待不会提前释放传输锁；不同进程/机器需运营者统一节流，不应并行启动多个 live 作业。
+只做小规模查询，不做全库抓取。接口参数依据 [官方手册](https://info.arxiv.org/help/api/user-manual.html)。
+
+2026-10-17 本次预检查：官方代理对 `export.arxiv.org:443` 的 CONNECT 返回 403；
+尚未验证真实 arXiv 返回或完整 hybrid 流程。离线 Atom、传输与主题链测试不能替代真实结果。
+
+## 可审计检查点与有界恢复
+
+`run` 现在在新输出目录写 `checkpoint.json`。成功的结构化模型回复和检索记录按精确输入缓存；模型定稿已成功、随后 novelty 失败时，定稿仍可恢复。缓存身份包括格式版本、自有 Python 源码哈希、主题/模式/本地 article/配置哈希和非秘密提供方配置哈希。模型凭据、代理 URL、环境变量不写入。缓存包含研究内容，按私有文件保管。
+
+在**同一代码、主题、配置及提供方身份**下，选择新输出目录：
+
+```bash
+python -m sage run --mode offline --topic 'same topic' --config limits.json \
+  --resume previous/checkpoint.json --output next-run
+```
+
+live 仍必须显式 `--mode live --allow-live`。`--cache-only-retrieval` 禁止任何新论文请求：只有精确查询/参数的历史成功结果可以命中；不同查询不会从旧池中伪装出新检索。命中记录 `cache_hit`、输入哈希、来源与 `network_request=false`。未知命中仍保持 unavailable。
+
+默认提供方异常仍失败。显式 `--allow-incomplete-novelty` 才允许暂时不可用的筛查返回 `not_established`，及补充规划检索保留 unavailable 后继续。初始锚点/最短链长/角色独有来源/所有权/采纳规则均不绕过。401/403 等非临时拒绝不会被该选项转成成功或未知。
+
+429 的 Retry-After（秒数或 HTTP 日期）现可记录；429 后暂停本检查点谱系的全部新论文请求，不进行即时重试，不切换主机或直连。旧失败仍保留，缓存命中仍可使用。长等待或未知 Retry-After 不会被无界循环隐藏；当前没有自动解封检索的选项。
+
+累计模型/检索请求、预留 token、SDK 实际 token（若提供方返回）、先前审计和活跃运行时长一起恢复，失败不归零。活跃时长不包含进程之间的离线等待。先前成功回复重放时重新执行当前验证器；缓存没有给来源增加权限。含未完成 `pending` 请求的检查点默认拒绝重发，只有显式 `--retry-uncertain` 允许另一次计费尝试；远端完成而本地未写入的窗口无法提供 exactly-once 保证。文件哈希是误改检测，不是签名、防篡改存储或安全沙箱。
+
+本入口只支持 `run`。`laboratory` 明确拒绝这些恢复参数，避免把执行副作用当作可安全重放的模型/检索请求。旧运行目录的 result.json 或临时恢复脚本不是此检查点格式，不能直接导入。源码/配置改变会拒绝重放，不自动把旧内容升级为新版本有效证据。
+
+## 讨论上下文与规划输出
+
+讨论协议新增 `sage.discussion.context.v1`：critique 提示显式列出 `citable_source_ids` 和目标角色不可引用来源，严格来源校验保持不变。证据正文按内容哈希去重，不同抽取不能互相覆盖；博士后只接收当前候选、完整证据表、意见/采纳关系、修订决策和历史哈希，完整历史留在 ledger。规划交接同样使用证据引用表，可无损还原采纳要求及证据卡片。核心材料仍超长则在发请求前停止，不能静默截断核心证据。默认提示上限仍 100000，本修复没有改成 200000。
+
+模型 `finish_reason=length` 分类为 `TruncatedResponse`，绝不接纳其内容。只有规划生成/修订在原有限 retry_attempts 内附加简洁完整输出约束；单次 token 上限、总预算和验证器不变。再次截断继续失败。提示约束在真实 DeepSeek 上是否改善成功率尚未复测。
+
+计划现在必须同时输出 `experiment` 和结构化 `plan_contract`（预算单位/上限/一次计费口径、指标分子分母和方向、独立样本单位及 n/理由、停止规则、证据限制）。缺失决定标 `unresolved`，不允许 `execution_ready=true` 或声称科学验证。输出字段通过只说明结构完整；公式是否正确、样本量是否充分、科学设计是否合理仍需独立审查。此对象不是 scalar-MSE 执行合同。
+
+### 字段级诊断与有限反馈重试
+
+讨论 JSON、字段类型、来源所有权、修订决定、原文保持、要求保留及综合交接使用预定义 `ValidationError` 字段/规则。审计 `validation_rejected`/`failed` 包含 stage、attempt、rule、field、响应哈希和长度，绝不回显未知 JSON 键、模型字段值或任意异常字符串。一般 InvalidResponse 无细分证据时保持 unspecified，不猜测规则。
+
+在原 retry_attempts 内，下一次请求可附加 `field_feedback_v1`，只包含程序自有规则说明，不包含被拒绝的回复，也不自动修改结果、放宽来源权限或强制采纳。每次实际请求哈希和预算仍记录；重复违反会按原上限失败。修订提示另区分无条件可引用来源和“只有明确采纳该 supported 意见后才可引用”的来源表；peer 内容可见不等于被授权引用。
+
+默认只记录安全诊断。显式 `--retain-rejected-responses` 才将大小受限的失败请求/回复保存在私有 checkpoint.rejections，权限 0600，带 stage/attempt/请求与响应哈希、代码身份和诊断；它们是未通过校验的不可信研究内容，不参与成功缓存，不能直接发布为脱敏日志。审计本身仍没有原文。没有 checkpoint 或回复超限时不会保存原文；标记 raw_retained_in_private_checkpoint=false。这些记录不能补回此前未保存的真实失败回复。

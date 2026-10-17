@@ -7,7 +7,7 @@ from dataclasses import replace
 import math
 import re
 from ..runtime import string_list
-from ..errors import InvalidResponse
+from ..errors import InvalidResponse, TransientProviderError
 from ..types import Paper, paper_record
 from ..dates import within_window
 from .prompts import get_deep_search_query_prompt, get_deep_rewrite_query_prompt
@@ -93,9 +93,32 @@ class Discovery:
             if len(included) < len(valid):
                 self.runtime.event("discovery.date_filter", "excluded", count=len(valid) - len(included))
             return included
-        papers = await self.runtime.call('search', 'discovery.search', operation)
+        papers = await self.runtime.call('search', 'discovery.search', operation, cache_input={'query': query, 'limit': limit, 'exclude': sorted(exclude), 'publication_date': self.runtime.config.publication_date})
         chosen = self.attach_articles((await self.rank(papers, query))[:limit])
         self.runtime.event("discovery.retrieval", "recorded", query=query, papers=[paper_record(p) for p in chosen])
+        return chosen
+
+    async def optional_search(self, query, *, limit=5, exclude=()):
+        """Only supplemental review/planning; never discovery anchors or chain gates."""
+        try:
+            return await self.search(query, limit=limit, exclude=exclude)
+        except TransientProviderError:
+            if not self.runtime.allow_incomplete_novelty:
+                raise
+            self.runtime.event('discovery.supplemental', 'unavailable', query=query,
+                               retrieval_incomplete=True, result_is_not_successful_search=True)
+            return []
+
+    async def topic_related(self, paper, topic, *, exclude=()):
+        async def operation():
+            papers = await self.runtime.source.topic_related(paper, limit=self.runtime.config.max_related,
+                                                            publication_date=self.runtime.config.publication_date)
+            return [p for p in unique(papers, exclude) if within_window(p, self.runtime.config.publication_date)]
+        papers = await self.runtime.call('search', 'discovery.topic_related', operation, cache_input={'anchor': paper_record(paper), 'limit': self.runtime.config.max_related, 'exclude': sorted(exclude), 'publication_date': self.runtime.config.publication_date})
+        chosen = self.attach_articles(await self.rank(papers, f'{topic} {paper.title}'))
+        self.runtime.event('discovery.retrieval', 'recorded', anchor_id=paper.paper_id,
+                           relation='topic_time', citation_graph_available=False,
+                           papers=[paper_record(p) for p in chosen])
         return chosen
 
     async def related(self, paper, topic, direction, *, exclude=()):
@@ -106,7 +129,7 @@ class Discovery:
             if len(included) < len(valid):
                 self.runtime.event("discovery.date_filter", "excluded", count=len(valid) - len(included))
             return included
-        papers = await self.runtime.call('search', f'discovery.{direction}', operation)
+        papers = await self.runtime.call('search', f'discovery.{direction}', operation, cache_input={'anchor': paper_record(paper), 'direction': direction, 'exclude': sorted(exclude), 'limit': self.runtime.config.max_related, 'publication_date': self.runtime.config.publication_date})
         chosen = self.attach_articles(await self.rank(papers, f'{topic} {paper.title} {paper.abstract}'))
         self.runtime.event('discovery.retrieval', 'recorded', anchor_id=paper.paper_id, direction=direction, papers=[paper_record(p) for p in chosen])
         return chosen

@@ -5,6 +5,7 @@ regeneration, ranking, review, design, budgets and audits are the real pipeline.
 """
 from __future__ import annotations
 from collections import Counter, deque
+import json
 from .types import Paper
 from .errors import ProviderError
 
@@ -110,12 +111,14 @@ class FixtureModel:
             return '<suggestions>Use matched budgets and report failed attempts; synthetic advice.</suggestions>'
         if stage == 'review.experiment':
             return '<suggestion>Freeze evaluation before trials and add paired-seed controls.</suggestion>'
+        from .experiment_design.contract import fixture_contract
+        plan_tag = '<plan_contract>' + json.dumps(fixture_contract()) + '</plan_contract>'
         if stage == 'experiment_design.generate':
-            return '<experiment>UNEXECUTED synthetic plan: freeze data and evaluator; compare baseline and candidate under equal budgets; report all seeds and failures.</experiment>'
+            return '<experiment>UNEXECUTED synthetic plan: freeze data and evaluator; compare baseline and candidate under equal budgets; report all seeds and failures.</experiment>' + plan_tag
         if stage == 'experiment_design.refine_query':
             return '<query>sage-fixture-refine</query>'
         if stage == 'experiment_design.paper_info':
             return '<info>Synthetic evidence recommends matched budgets and explicit failure accounting.</info>'
         if stage == 'experiment_design.refine':
-            return '<experiment>UNEXECUTED revised synthetic plan: preregister fixed data/evaluator, paired seeds, equal budgets, negative controls, and all failed attempts. Require human review before execution.</experiment>'
+            return '<experiment>UNEXECUTED revised synthetic plan: preregister fixed data/evaluator, paired seeds, equal budgets, negative controls, and all failed attempts. Require human review before execution.</experiment>' + plan_tag
         raise ProviderError('Fixture has no response for requested stage')

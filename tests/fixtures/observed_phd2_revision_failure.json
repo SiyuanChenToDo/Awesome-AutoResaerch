@@ -1,0 +1,24 @@
+{
+  "description": "Sanitized observed final phd-2 revision failure metadata; rejected reply was never retained. This fixture is NOT a reconstructed model response.",
+  "model_calls_at_failure": 8,
+  "failed_entry": {
+    "status": "failed",
+    "error_code": "invalid_response"
+  },
+  "attempts": [
+    {
+      "stage": "discussion.revise",
+      "status": "failed",
+      "attempt": 1,
+      "error_code": "invalid_response"
+    },
+    {
+      "stage": "discussion.revise",
+      "status": "failed",
+      "attempt": 2,
+      "error_code": "invalid_response"
+    }
+  ],
+  "raw_response_present": false,
+  "diagnostic_present": false
+}

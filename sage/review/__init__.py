@@ -3,7 +3,7 @@
 # Source and modification map: NOTICE.md and docs/sage-migration.md.
 """Evidence-backed novelty screening and proposal review; never scientific proof."""
 from __future__ import annotations
-from ..errors import InvalidResponse
+from ..errors import InvalidResponse, TransientProviderError
 from ..runtime import string_list
 from ..types import NoveltyAssessment, paper_record
 from .prompts import (get_deep_check_idea_novel_search_query_prompt, get_deep_check_idea_novel_prompt,
@@ -48,6 +48,13 @@ class Review:
             similar = response['similar'] == '1'
             return NoveltyAssessment('similar_work_found' if similar else 'no_similar_work_found', queries, papers,
                                      response['summary'], papers[int(response['similar_paper_id'])].paper_id if similar else None)
+        except TransientProviderError:
+            if not self.runtime.allow_incomplete_novelty:
+                raise
+            self.runtime.event('review.novelty', 'not_established', reason='provider_screening_incomplete',
+                               compared_source_ids=[p.paper_id for p in papers])
+            return NoveltyAssessment('not_established', queries, papers,
+                'Provider screening unavailable or incomplete; novelty is unknown. No successful fresh search is implied.')
         except InvalidResponse:
             self.runtime.event('review.novelty', 'not_established', reason='invalid_model_output')
             return NoveltyAssessment('not_established', queries, papers, 'Invalid model screening output; novelty is unknown.')
@@ -81,7 +88,7 @@ class Review:
                                        ('queries',), validate=lambda r: string_list(r['queries'], limit))
         papers, seen = [], set()
         for query in string_list(value['queries'], limit):
-            found = await self.discovery.search(query, limit=2, exclude=seen)
+            found = await self.discovery.optional_search(query, limit=2, exclude=seen)
             papers.extend(found)
             seen.update(x for p in found for x in (p.paper_id, p.title.casefold()))
         if not papers:

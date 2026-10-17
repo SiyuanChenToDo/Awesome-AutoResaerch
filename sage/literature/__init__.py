@@ -12,7 +12,8 @@ from .prompts import get_deep_reference_prompt, get_deep_judge_relevant_prompt
 
 def paper_content(paper):
     lines = [f'Evidence scope: {paper.evidence_scope}', f'Paper ID: {paper.paper_id}',
-             f'Source: {paper.url}', f'Title: {paper.title}', f'Abstract: {paper.abstract}']
+             f'Source: {paper.url}', f'Title: {paper.title}', f'Authors: {paper.authors}',
+             f'Publication date: {paper.publication_date}', f'Abstract: {paper.abstract}']
     if paper.article:
         # User-provided article JSON follows the upstream sections/references shape.
         for section in paper.article.get('sections', []):
@@ -46,7 +47,31 @@ class Literature:
                                           ('relevant',), validate=validate)
         return response['relevant'] == '1'
 
+    async def build_topic_chain(self, anchor, topic):
+        """Explicit metadata-only alternative: no invented citation/reference edges."""
+        evidence = [await self.extract(anchor, topic)]
+        maximum = self.runtime.config.max_chain_length
+        if maximum > 1:
+            papers = await self.discovery.topic_related(anchor, topic,
+                                                        exclude=(anchor.paper_id, anchor.title.casefold()))
+            for paper in papers:
+                if await self.relevant(paper, topic):
+                    evidence.append(await self.extract(paper, topic))
+                    if len(evidence) >= maximum:
+                        break
+        evidence.sort(key=lambda e: (e.paper.publication_date or '', e.paper.paper_id))
+        self.runtime.event('literature.chain', 'topic_time', anchor_id=anchor.paper_id,
+                           relation='topic_time', citation_graph_available=False,
+                           paper_ids=[e.paper.paper_id for e in evidence])
+        if len(evidence) < self.runtime.config.min_chain_length:
+            raise NoEvidence('Topic/time chain is shorter than min_chain_length')
+        return Chain(evidence=evidence, trend='', entities='', relation='topic_time',
+                     stop_reasons=['citation_graph_unavailable', 'max_chain_length' if len(evidence) >= maximum
+                                   else 'topic_search_exhausted'])
+
     async def build_chain(self, anchor, topic):
+        if getattr(self.runtime.source, 'chain_relation', None) == 'topic_time':
+            return await self.build_topic_chain(anchor, topic)
         first = await self.extract(anchor, topic)
         evidence, seen, reasons = [first], {anchor.paper_id, anchor.title.casefold()}, []
         maximum = self.runtime.config.max_chain_length
