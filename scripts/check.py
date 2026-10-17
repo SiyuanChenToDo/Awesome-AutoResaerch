@@ -38,7 +38,7 @@ def main():
     completed = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=ROOT, check=False)
     if completed.returncode:
         return completed.returncode
-    print("All SAGE offline checks passed. The owned pipeline and live adapters were tested with fake providers; no live API calls, experiments or scientific validation were performed.")
+    print("All SAGE offline checks passed. Synthetic pipelines, mock provider/Docker adapters and explicitly allowlisted reviewed-script subprocess tests were exercised; no live API calls, real Docker validation or scientific experiments were performed.")
     return 0
 
 

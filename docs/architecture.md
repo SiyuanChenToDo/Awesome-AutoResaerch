@@ -12,6 +12,12 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 
 **仍未实现或未验收**：独立科学评价、可信身份审批、签名授权、并发账本锁、生产隔离验证、金额计量与可靠的最终测试隔离。JSON 中写 `approved` / `network: false` 不会自动实现授权或断网。结构审计通过也不能证明科学有效。
 
+## 可选的 CoI 博士生讨论
+
+`discussion-mode hybrid` 在候选构造后、实验计划前引入 [discussion](../sage/discussion/)：独立来源范围 → 角色化发展提案 → 环形互评 → 有界修订 → 博士后选择/规划交接。原始候选、意见和来源归属、每轮决策、提示词版本与哈希均进入 `RunResult.discussion`。原 `none` 路径仍可作为工程对照。
+
+规划接收结构化讨论交接，采纳的要求跨轮保留，并传入后续 laboratory 代码与报告阶段。来源归属验证只检查可引用的 ID，不证明语义支持或因果效果；提示词 v1/v2 的存在也不代表优化效果已确认。详情见[专门说明](coi-laboratory-discussion.md)。
+
 ## 实际运行边界
 
 - [types.py](../sage/types.py)：`Paper`、`Evidence`、`Chain`、`Candidate`、`NoveltyAssessment`、`ExperimentPlan`、`RunResult`，另有 `LanguageModel` / `PaperSource` Protocol。

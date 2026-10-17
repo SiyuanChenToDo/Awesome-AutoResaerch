@@ -8,6 +8,7 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 | [literature](literature/README.md) | 论文证据 → 摘录、双向引用链 | 真实模块逻辑；保留 abstract-only / local article 范围 |
 | [ideation](ideation/README.md) | 文献链 → 趋势/实体、方向、候选与定稿 | 有界生成/再生成，空证据保持未知 |
 | [experiment_design](experiment_design/README.md) | 想法/相关文献/意见 → 方案与修订历史 | 方案生成与补充证据修订；不执行实验 |
+| [discussion](discussion/README.md) | 各自 CoI 候选 → 互评/修订 → 博士后规划要求 | 可选 hybrid，来源归属校验、跨轮采纳保留、版本化提示词 |
 | [review](review/README.md) | 候选/方案/证据 → 新颖性、六维比较、评审与契约检查 | 模型评审和确定性结构核验；不是科学评价器 |
 | [orchestration](orchestration/README.md) | 配置/提供方 → 研究提案产物与调用记录 | 同一 offline/live 控制器，有界重试与调用/时间预算 |
 | [execution](execution/README.md) | 方案/冻结契约 → 尝试与评价状态 | 有界代码候选、修复、固定开发评价与显式后端 |

@@ -205,6 +205,10 @@ def main(argv=None):
     runner.add_argument('--articles', type=Path, help='Local article JSON by stable paper ID/title')
     for name in ('max-chain-length', 'min-chain-length', 'max-candidates', 'max-model-calls', 'max-search-calls', 'refinement-rounds'):
         runner.add_argument('--' + name, type=int, default=None)
+    runner.add_argument('--discussion-mode', choices=('none', 'hybrid'), default=None, help='Optional CoI student discussion before planning')
+    runner.add_argument('--discussion-students', type=int, default=None)
+    runner.add_argument('--discussion-rounds', type=int, default=None)
+    runner.add_argument('--discussion-prompt-version', choices=('v1', 'v2'), default=None)
     runner.add_argument('--publication-date', default=None, help='Inclusive DateOrYear or start:end window for all retrieval')
     for command in ('catalog', 'project', 'provenance'):
         sub.add_parser(command, help=f'Compatibility commands: sage {command} --help')
@@ -219,7 +223,7 @@ def main(argv=None):
         if args.command == 'doctor':
             return doctor()
         overrides = load_json(args.config) if args.config else {}
-        for name in ('max_chain_length', 'min_chain_length', 'max_candidates', 'max_model_calls', 'max_search_calls', 'refinement_rounds', 'publication_date'):
+        for name in ('max_chain_length', 'min_chain_length', 'max_candidates', 'max_model_calls', 'max_search_calls', 'refinement_rounds', 'publication_date', 'discussion_mode', 'discussion_students', 'discussion_rounds', 'discussion_prompt_version'):
             if getattr(args, name) is not None:
                 overrides[name] = getattr(args, name)
         try:

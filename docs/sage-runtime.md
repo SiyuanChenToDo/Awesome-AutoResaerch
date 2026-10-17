@@ -131,7 +131,7 @@ JSON 可覆盖 `max_chain_length`、`min_chain_length`、`max_candidates`、`max
 - Semantic Scholar 适配器只访问官方 graph HTTPS endpoint，不追随重定向，不访问论文中的下载 URL。模型 SDK 的重定向和环境代理自动继承也关闭；原 `OPENAI_PROXY_URL` 行为未迁移，需代理的网络环境不能假定兼容。
 - 提供方错误归类，避免在日志中原样输出响应体、凭据或秘密 URL；项目产物本身仍可能包含敏感研究内容。
 
-这些是应用层限制，不是 OS/容器沙箱、独立权限域、金融预算保证、可恢复远端任务队列或提示注入安全证明。真实实验执行尚不存在。
+这些是应用层限制，不是 OS/容器沙箱、独立权限域、金融预算保证、可恢复远端任务队列或提示注入安全证明。原 `run` 不执行实验；`laboratory` 可显式使用后文的执行后端，Docker 适配器尚未完成真实容器实测。
 
 ## 6. 兼容工具
 
@@ -162,3 +162,16 @@ python scripts/coi.py prepare --destination projects/coi-agent-runtime
 真实执行提供显式 Docker backend，需要本地已安装引擎、已审核且以 digest 固定的预装镜像、冻结 contract 文件及匹配的 `--approved-contract-digest`。当前仅支持标量预测的 development MSE，目标标签不发送给模型/容器。本次未实测 Docker 或 live 服务，不宣称安全沙箱或科研效果。完整参数、契约格式、源函数映射与限制见 [Agent Laboratory 迁移指南](agent-laboratory-migration.md)。
 
 原 `run` 产物中的 `execution_status: not_implemented` / `writing_status: not_implemented` 保留为兼容字段，含义仅限该提案运行；新能力位于 `sage.laboratory.v1` 外层 `execution` 和 `report` 字段。不得用兼容字段或模型评审评分推断科研成功。
+
+## 可选 CoI 博士生讨论
+
+在 laboratory 加 `--discussion-mode hybrid`，会先让默认两名博士生分别形成有来源的 CoI 提案，再互评、有限修订、由博士后综合选择，最后把接受的控制要求送入实验计划和原工程／报告流程：
+
+```bash
+python -m sage laboratory --mode offline --discussion-mode hybrid --output projects/lab-discussion
+python -m sage laboratory --mode offline --discussion-mode none --output projects/lab-baseline
+```
+
+默认 `none` 保持原流程；`run` 也支持同样参数。可选 `--discussion-students 2`（2–4）、`--discussion-rounds 1`（1–3）、`--discussion-prompt-version v2`（v1/v2）。配置 JSON 使用对应下划线字段。学生数不能超过 `max_candidates`，实际独立来源不足时停止，不能复制一名学生。所有角色与后续 laboratory 阶段共享总预算。
+
+讨论产物在 `proposal.discussion`（提案入口则为 `discussion`），包括原始版本、意见与证据所有权、接受／拒绝、模板版本与哈希，以及实验交接。未知／失败意见不自动接受；来源 ID 检查并不证明意见科学正确。相同模型的多个角色不是独立专家。完整流程、消融与验证边界见 [CoI × Agent Laboratory 讨论指南](coi-laboratory-discussion.md)。

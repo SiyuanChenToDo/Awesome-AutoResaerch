@@ -16,6 +16,8 @@
 
 ### SAGE 当前落地
 
+- 新增可选 CoI 博士生 hybrid 讨论：分来源候选、环形互评、有界修订、博士后规划交接与提示词版本记录；关闭讨论保留基线。该机制已接入 laboratory，真实质量提升仍待同模型/预算实验。
+
 - 自有 `sage/` 运行包，discovery、literature、ideation、experiment_design、review、orchestration 分别包含实际逻辑；原始 19 个 prompt 函数按职责迁移。
 - 同一控制器支持标准库离线 fake providers 和显式 opt-in 的 OpenAI/Azure + Semantic Scholar live adapters。
 - 查询/改写、双向文献链、提取、趋势/实体、未来方向、候选/定稿、有限判新再生成、六维两两比较、方案/评审/补充证据修订串联。

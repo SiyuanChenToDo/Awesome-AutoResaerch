@@ -28,10 +28,17 @@ async def run(topic, main_model, source, *, cheap_model=None, config=None, mode=
     ideation = Ideation(runtime, review)
     design = ExperimentDesign(runtime, discovery, review)
     result = RunResult(topic=topic.strip(), mode=mode)
+    discussion = None
+    if config.discussion_mode == 'hybrid':
+        from ..discussion import Discussion
+        discussion = Discussion(runtime)
+        result.discussion = discussion.ledger
     try:
         anchors = await discovery.anchors(topic)
         if not anchors:
             raise NoEvidence('No anchor papers found within the search budget')
+        if discussion:
+            anchors = anchors[:config.discussion_students]
         for anchor in anchors:
             try:
                 chain = await literature.build_chain(anchor, topic)
@@ -43,11 +50,28 @@ async def run(topic, main_model, source, *, cheap_model=None, config=None, mode=
             raise NoEvidence('No candidate met the minimum literature-chain requirement')
         result.ranking = await review.rank(result.candidates, topic)
         result.selected_index = result.ranking['selected_index']
+        if discussion:
+            result.selected_index = await discussion.deliberate(result.candidates, topic, review)
+            result.ranking = {'method': 'postdoc_discussion_synthesis', 'selected_index': result.selected_index,
+                              'pre_discussion_ranking': result.ranking, 'scientific_validation': False,
+                              'basis': 'source_scoped_model_preference_only'}
         selected = result.candidates[result.selected_index]
-        result.experiment = await design.generate(selected, topic)
+        planning_candidate = selected
+        if discussion:
+            from copy import deepcopy
+            import json
+            planning_candidate = deepcopy(selected)
+            planning_candidate.idea += '\nDiscussion planning handoff: ' + json.dumps(discussion.ledger['plan_handoff'])
+        result.experiment = await design.generate(planning_candidate, topic)
+        if discussion:
+            discussion.bind_plan(result.experiment)
         result.status = 'completed' if all(c.novelty.status == 'no_similar_work_found' for c in result.candidates) else 'completed_with_uncertainty'
+        if discussion and discussion.ledger['status'] == 'completed_with_uncertainty':
+            result.status = 'completed_with_uncertainty'
         runtime.event('orchestration.run', result.status, artifact_type='unexecuted_research_proposal')
     except SageError as error:
+        if discussion:
+            discussion.ledger['status'] = 'stopped' if error.code in ('budget_exceeded', 'no_evidence') else 'failed'
         result.status = 'stopped' if error.code in ('budget_exceeded', 'no_evidence') else 'failed'
         # Messages here originate from our own categorized errors, never provider bodies.
         result.errors.append({'code': error.code, 'message': str(error)})

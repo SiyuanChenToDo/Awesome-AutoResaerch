@@ -72,6 +72,9 @@ class FixtureModel:
             if isinstance(response, BaseException):
                 raise response
             return response
+        if stage.startswith('discussion.'):
+            from .discussion.fixtures import respond
+            return respond(stage, prompt)
         if stage == 'discovery.queries':
             return '<queries>["sage-fixture-a", "sage-fixture-b"]</queries>'
         if stage == 'discovery.rewrite':

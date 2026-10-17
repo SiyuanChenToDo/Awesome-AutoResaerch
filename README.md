@@ -37,6 +37,7 @@
 | **发现文献** | 查询生成、空结果改写、Semantic Scholar 检索、去重、日期过滤与重排 | [discovery](sage/discovery/) |
 | **连接证据** | 前向被引 / 后向参考文献链、相关性判断、证据提取和阅读范围记录 | [literature](sage/literature/) |
 | **形成想法** | 趋势与实体综合、未来方向、候选生成、定稿和有界再生成 | [ideation](sage/ideation/) |
+| **CoI 博士生讨论** | 每人独立文献链与候选，带来源的互评、明确采纳/拒绝、有限修订及博士后规划交接；显式开启 | [discussion](sage/discussion/) |
 | **比较与评审** | 检索范围内的新颖性筛查、六维两两比较、文献建议与方案评审 | [review](sage/review/) |
 | **设计方案** | 实验方案、补充检索与证据支持的修订；保留修订历史 | [experiment_design](sage/experiment_design/) |
 | **组织流程** | 类型契约、统一调用与时间预算、审计记录、结构检查与错误保留 | [orchestration](sage/orchestration/) |
@@ -133,6 +134,28 @@ python -m sage laboratory --mode offline --backend fixture --allow-execution --o
 真实候选执行另需显式 Docker 后端、预安装固定镜像和冻结协议；本次未在 Docker 中做真实运行验证。当前内置评价契约为开发集标量预测 MSE，不能直接当成任意 AI 研究任务的完整评价器。
 
 使用方法、默认 dry-run、执行后端要求和逐项迁移范围见[Agent Laboratory 迁移与运行说明](docs/agent-laboratory-migration.md)。原 `sage run` 仍是提案入口，不会因接入新模块自动开始实验。
+
+## 将 CoI 融入博士生讨论
+
+新增可选的 `hybrid` 讨论模式，位于生成候选之后、准备实验计划之前：
+
+```text
+各自的 CoI 文献链与候选 → 博士生发展提案 → 环形互评 → 采纳/拒绝与修订
+                                              ↓
+                         博士后选择与规划要求 → 实验计划 → 代码迭代 → 报告
+```
+
+每位博士生保留独立的来源范围、原始候选和修订历史。意见只能引用分配给该角色的来源；未知或失败的意见不能直接作为已采纳依据。采纳的意见绑定到实验计划，跨轮保留，修订后的想法重新检查相似工作。
+
+```bash
+python -m sage laboratory --mode offline --discussion-mode hybrid --backend fixture --allow-execution --output projects/sage-hybrid
+```
+
+默认开启 hybrid 时为 **2 位博士生、1 轮互评**；支持 2–4 位、1–3 轮，仍受同一个总调用预算限制。旧命令默认 `discussion-mode none`，方便关闭讨论做对照。角色共用模型并不等于独立专家。
+
+组合提示词提供 `v1` / `v2` 版本选择并记录哈希；v2 加入具体反证控制、证据缺口和分歧约束。它们是可审阅的提示词迭代，尚无真实模型实验说明 v2 更优，也不会自动无界改写自身。
+
+详见[讨论机制与参数](docs/coi-laboratory-discussion.md)与[验证记录](docs/hybrid-validation.md)。离线测试检查数据传递、来源归属和预算；不能据此断言讨论提高科研质量。
 
 ## 慢慢建设，先把每一步做实
 

@@ -24,8 +24,18 @@ class RunConfig:
     max_prompt_chars: int = 100000
     max_response_chars: int = 100000
     publication_date: str | None = None
+    discussion_mode: str = "none"
+    discussion_students: int = 2
+    discussion_rounds: int = 1
+    discussion_prompt_version: str = "v2"
 
     def __post_init__(self):
+        if self.discussion_mode not in ('none', 'hybrid') or self.discussion_prompt_version not in ('v1', 'v2'):
+            raise ConfigurationError('Invalid discussion mode or prompt version')
+        if type(self.discussion_students) is not int or not 2 <= self.discussion_students <= 4:
+            raise ConfigurationError('discussion_students must be between 2 and 4')
+        if type(self.discussion_rounds) is not int or not 1 <= self.discussion_rounds <= 3:
+            raise ConfigurationError('discussion_rounds must be between 1 and 3')
         positive = ('max_chain_length', 'min_chain_length', 'max_candidates', 'max_queries',
                     'max_related', 'novelty_attempts', 'retry_attempts', 'max_model_calls',
                     'max_search_calls', 'max_tokens_per_call', 'max_reserved_output_tokens',
@@ -34,6 +44,8 @@ class RunConfig:
             value = getattr(self, name)
             if type(value) is not int or value < 1:
                 raise ConfigurationError(f'{name} must be a positive integer')
+        if self.discussion_mode == 'hybrid' and self.max_candidates < self.discussion_students:
+            raise ConfigurationError('Hybrid requires max_candidates >= discussion_students')
         for name in ('search_rewrites', 'refinement_rounds'):
             value = getattr(self, name)
             if type(value) is not int or value < 0:

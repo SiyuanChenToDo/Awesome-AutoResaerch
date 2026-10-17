@@ -82,6 +82,7 @@ class RunResult:
     writing_status: str = "not_implemented"
     scientific_validation: str = "not_performed"
     schema_version: str = "sage.run.v1"
+    discussion: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

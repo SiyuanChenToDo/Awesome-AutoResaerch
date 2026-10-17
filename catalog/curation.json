@@ -22,7 +22,7 @@
       "task_status": "in_progress",
       "integration_status": "modularized",
       "runtime_verification_status": "offline_end_to_end_verified",
-      "borrow": "引用链、证据提取、趋势与实体综合、想法生成/新颖性筛查、两两比较、实验方案与证据支持的 review/refinement 已拆入 SAGE 的独立模块。",
+      "borrow": "引用链、证据提取、趋势与实体综合、想法生成/新颖性筛查、两两比较、实验方案与证据支持的 review/refinement 已拆入 SAGE 的独立模块。 可选 hybrid 将各自文献链候选接入博士生互评、修订和博士后规划交接。",
       "caution": "实际 API 兼容性、文献召回和科研效果尚未验证；live 默认仅题录/摘要，全文需显式 local article。CoI 提案命令不自动执行实验；新增 laboratory 链单独 opt-in。调用/token 限制不是美元预算或操作系统沙箱。",
       "related_ids": [],
       "source_import_status": "pinned_snapshot_with_offline_patches",
@@ -46,7 +46,7 @@
       "task_status": "in_progress",
       "integration_status": "modularized",
       "runtime_verification_status": "offline_end_to_end_verified",
-      "borrow": "MLESolver 的 EDIT/REPLACE、代码候选修复/改进、尝试历史与最佳候选，以及 PaperSolver 的分节报告/评审已拆入 SAGE。",
+      "borrow": "MLESolver 的 EDIT/REPLACE、代码候选修复/改进、尝试历史与最佳候选，以及 PaperSolver 的分节报告/评审已拆入 SAGE。 新增 CoI 驱动的博士生讨论与博士后规划交接，保留来源归属、采纳历史及组合提示词版本。",
       "caution": "原始上游未独立运行；离线 fixtures 不代表科研结果。真实模型与 Docker 后端未实测；当前固定开发评价仅为标量预测 MSE，不是通用科学评价器。",
       "related_ids": [
         "arxiv-2501-04227"
