@@ -9,18 +9,20 @@
 | 项目 | 计划任务状态 | 当前安排 | 运行核验 / 工作台集成 |
 |---|---|---|---|
 | [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | `completed`，按用户要求完成 | 从后续复现优先队列排除；保留历史资料与借鉴记录 | `not_run` / `not_integrated` |
-| CoI-Agent（[Chain of Ideas](https://arxiv.org/abs/2410.13185)） | `planned` | 当前重点：独特机制、代码入口与模块功能 | `not_run` / `not_integrated` |
+| CoI-Agent（[Chain of Ideas](https://arxiv.org/abs/2410.13185)） | `in_progress` | 已导入固定源码、8 类目录与离线补丁准备；后续才接联网执行 | `not_run` / `source_imported` |
 | [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) | `planned` | 当前重点：独特机制、代码入口与模块功能 | `not_run` / `not_integrated` |
 
 **状态边界**：autoresearch 的 `completed` 来自用户对计划的明确决定，不表示本仓库已安装、独立运行、复现性能或完成集成。现有[核验记录](../catalog/verification.json)保持原范围，不因此升级。
 
-接下来只围绕 CoI-Agent 与 Agent Laboratory 整理：
+CoI-Agent 当前基础：已按 Apache-2.0 导入 15 个原始文件（[来源清单](../third_party/coi_agent/manifest.json)），新增[分类目录](../modules/README.md)和 5 个确定性补丁的离线准备器。原始源码未修改；已做离线单元/结构检查，未安装上游依赖、联网调用模型、训练或复现实验。
+
+接下来继续围绕 CoI-Agent 与 Agent Laboratory：
 
 1. 固定代码版本，区分论文描述、README 自述和实际代码可见的功能。
 2. 标出入口、核心模块、输入输出、依赖与调用链，说明各自的独特机制。
 3. 列出最小验证步骤、资源与权限需求、预期产物和停止条件；真实运行另需明确授权与预算。
 
-本次仅更新计划，不添加未核验的代码能力或实验结果。机器可读的当前优先队列与任务状态见 [curation.json](../catalog/curation.json)；其他目录条目继续作为背景资料。
+代码导入与离线准备已交付，实际联网集成和研究效果验证尚未完成。机器可读的当前优先队列与任务状态见 [curation.json](../catalog/curation.json)；其他目录条目继续作为背景资料。
 
 ## P0：可搬走的研究包（本仓库起点）
 

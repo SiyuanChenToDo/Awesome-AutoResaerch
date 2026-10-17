@@ -1,0 +1,21 @@
+SEMENTIC_SEARCH_API_KEY: ""
+
+is_azure : True # if false, it is openai
+
+# set it if you set is_azure to True
+AZURE_OPENAI_ENDPOINT : ""
+AZURE_OPENAI_KEY : ""
+AZURE_OPENAI_API_VERSION : ""
+
+# set it if you set is_azure to False
+OPENAI_API_KEY: ""
+OPENAI_BASE_URL: ""
+
+# if not set it will be set to the same as main llm
+EMBEDDING_API_KEY: ""
+EMBEDDING_API_ENDPOINT: ""
+EMBEDDING_MODEL: ""
+
+MAIN_LLM_MODEL: "" # "gpt-4o" or ...
+
+CHEAP_LLM_MODEL: "" # "gpt-4o" or ...

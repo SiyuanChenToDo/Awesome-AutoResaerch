@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run every offline scaffold check, without model APIs or research-code execution."""
+"""Run every offline scaffold check, without model APIs or full external workflow execution."""
 from pathlib import Path
 import subprocess
 import sys
@@ -38,7 +38,7 @@ def main():
     completed = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=ROOT, check=False)
     if completed.returncode:
         return completed.returncode
-    print("All offline scaffold checks passed. No external research code, network verification, model API or experiments were run.")
+    print("All offline scaffold checks passed. CoI source patches were unit-tested with local fakes; no complete upstream workflow, network verification, model API or experiments were run.")
     return 0
 
 

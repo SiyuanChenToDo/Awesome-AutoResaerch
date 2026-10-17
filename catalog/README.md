@@ -12,3 +12,7 @@
 `curation.json` 中的 P1/P2 是工具选型优先级，不是路线图的功能阶段编号；`excluded` 表示已移出后续复现优先队列。当前重点仅由 `current_reproduction_priorities` 列出，其他条目保留作背景资料。
 
 `task_status: completed` 表示计划任务完成；`completion_basis` 说明依据。它与 `runtime_verification_status`、`integration_status` 分开记录：按用户要求关闭任务，不会把 `not_run` / `not_integrated` 升级成已复现或已集成。生成的来源目录与历史核验记录不随计划状态改写。
+
+## 按功能找工具与代码
+
+[功能模块目录](../modules/README.md)提供 8 类入口，引用本目录原记录，不另建重复清单。CoI-Agent 的固定源码与离线准备状态见[导入说明](../third_party/coi_agent/README.md)；原始 catalog 记录保持来源状态，当前接入进度单独写入 [curation.json](curation.json)。

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "upstream_commit": "ac94317ff2d1997f362747edc2c9e5f0fdc9c450",
+  "patches": [
+    {
+      "id": "chain-result-order",
+      "path": "agents.py",
+      "reason": "Match aggregation to deep_research_paper_with_chain return order; prevent trend/experiment/entity slot corruption.",
+      "old": "ideas,idea_chains,experiments,entities,trends,futures,humans,years = [[result[i] for result in results] for i in range(8)]",
+      "new": "ideas,idea_chains,trends,experiments,entities,futures,humans,years = [[result[i] for result in results] for i in range(8)]"
+    },
+    {
+      "id": "explicit-azure-boolean",
+      "path": "LLM.py",
+      "reason": "Environment strings including False must not be interpreted by Python truthiness. Reject unknown values.",
+      "old": "        is_azure = os.environ.get(\"is_azure\", True)",
+      "new": "        azure_value = os.environ.get(\"is_azure\", \"true\").strip().lower()\n        if azure_value not in {\"true\", \"false\", \"1\", \"0\"}:\n            raise ValueError(\"is_azure must be true, false, 1 or 0\")\n        is_azure = azure_value in {\"true\", \"1\"}"
+    },
+    {
+      "id": "chain-length-cli",
+      "path": "main.py",
+      "reason": "Remove the embedded space/typo so argparse sets max_chain_length used by the agent.",
+      "old": "\"--max_chain_length t\"",
+      "new": "\"--max_chain_length\""
+    },
+    {
+      "id": "empty-novelty-inconclusive",
+      "path": "agents.py",
+      "reason": "No search evidence cannot establish novelty. Stop instead of accepting a candidate or looping on missing evidence.",
+      "old": "            return True,None,\"\"",
+      "new": "            raise RuntimeError(\"Novelty check inconclusive: no search evidence\")"
+    },
+    {
+      "id": "malformed-novelty-inconclusive",
+      "path": "agents.py",
+      "reason": "Malformed model verdict is unknown, not novel; initialize optional similar paper before parsing its index.",
+      "old": "            novel = True if similar != \"1\" else False\n            try:",
+      "new": "            if similar not in {\"0\", \"1\"}:\n                raise RuntimeError(\"Novelty check inconclusive: invalid similarity verdict\")\n            novel = similar == \"0\"\n            similar_paper = None\n            try:"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "meaning": "Priorities P1/P2 are proposed adoption priority, not roadmap phases or empirical rankings; excluded means removed from future reproduction priorities. current_reproduction_priorities alone defines the current focus; other entries remain background references. task_status is planning status, independent of runtime_verification_status and integration_status. planned integration means no integration implemented.",
+  "meaning": "Priorities P1/P2 are proposed adoption priority, not roadmap phases or empirical rankings; excluded means removed from future reproduction priorities. current_reproduction_priorities alone defines the current focus; other entries remain background references. task_status is planning status, independent of runtime_verification_status and integration_status. planned integration means no integration implemented. source_imported means pinned source and offline preparation exist, not live integration or reproduced results.",
   "plan_updated_at": "2026-10-17",
   "current_reproduction_priorities": [
     "arxiv-2410-13185",
@@ -15,12 +15,16 @@
         "ideation"
       ],
       "priority": "P1",
-      "task_status": "planned",
-      "integration_status": "not_integrated",
+      "task_status": "in_progress",
+      "integration_status": "source_imported",
       "runtime_verification_status": "not_run",
-      "borrow": "当前重点：核对独特机制、代码入口、模块职责和输入输出，再决定借鉴边界。",
-      "caution": "本条关联已有论文记录；本次计划更新不宣称代码功能已核验或独立运行已完成。",
-      "related_ids": []
+      "borrow": "已导入引用链、想法生成、方案设计、review 源码；原始快照与我们的离线补丁准备器分离。",
+      "caution": "联网执行、依赖安装、真实实验与性能复现均未进行；预算、无限重试、PDF 路径与错误语义仍需进一步优化。",
+      "related_ids": [],
+      "source_import_status": "pinned_snapshot_with_offline_patches",
+      "offline_verification_status": "unit_tested_with_local_fakes",
+      "upstream_commit": "ac94317ff2d1997f362747edc2c9e5f0fdc9c450",
+      "source_manifest": "third_party/coi_agent/manifest.json"
     },
     {
       "id": "github-samuelschmidgall-agentlaboratory-288ff23a9cda",
