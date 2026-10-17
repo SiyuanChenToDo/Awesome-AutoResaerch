@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="176" viewBox="0 0 720 176" role="img" aria-labelledby="title desc">
+  <title id="title">SAGE — Scientific Agent for Grounded Exploration</title>
+  <desc id="desc">SAGE wordmark with an original S-shaped evidence-chain symbol, on an ivory background.</desc>
+  <rect x=".5" y=".5" width="719" height="175" rx="24" fill="#f8faf4" stroke="#dce5db"/>
+  <g transform="translate(24 24)">
+    <rect width="128" height="128" rx="30" fill="#152f2b"/>
+    <path d="M87 30H53c-12 0-21 7-21 17s9 17 21 17h22c12 0 21 7 21 17s-9 17-21 17H41" fill="none" stroke="#b7dbc3" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="87" cy="30" r="8" fill="#e5b567"/>
+    <circle cx="64" cy="64" r="7" fill="#f8faf4"/>
+    <circle cx="41" cy="98" r="8" fill="#b7dbc3"/>
+  </g>
+  <g fill="#152f2b" font-family="Arial, Helvetica, sans-serif">
+    <text x="181" y="105" font-size="79" font-weight="700" letter-spacing="7">SAGE</text>
+    <text x="185" y="136" font-size="17" letter-spacing=".1">Scientific Agent for Grounded Exploration</text>
+  </g>
+</svg>

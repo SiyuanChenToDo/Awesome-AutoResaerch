@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "project": "CoI-Agent",
+  "repository": "https://github.com/DAMO-NLP-SG/CoI-Agent",
+  "commit": "ac94317ff2d1997f362747edc2c9e5f0fdc9c450",
+  "retrieved_at": "2026-10-17",
+  "license": "Apache-2.0",
+  "license_path": "upstream/LICENSE",
+  "upstream_notice_present": false,
+  "source_modified": false,
+  "runtime_verification_status": "not_run",
+  "files": [
+    {
+      "path": "LICENSE",
+      "git_blob_sha": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "size_bytes": 11357
+    },
+    {
+      "path": "LLM.py",
+      "git_blob_sha": "6c559b3157fec38f83de290c9754bf199c88f826",
+      "sha256": "7c69d3be9ab35f3e11fb2f83382ab13c5c044aa51c19b9cfb3cd728a810282d7",
+      "size_bytes": 7641
+    },
+    {
+      "path": "README.md",
+      "git_blob_sha": "6f0945bbc410a69c348edc075ef05e3c28f1562c",
+      "sha256": "691aaac08c996be0fc3093948d468d92ff7c98813f92324b4cb3dd8f039302ae",
+      "size_bytes": 3312
+    },
+    {
+      "path": "__init__.py",
+      "git_blob_sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "agents.py",
+      "git_blob_sha": "98c8a3d0bbb064ac238ddd19bd5da693cbf4ad65",
+      "sha256": "89e91657297e4e06fbee3d1b72e1468809125091508052f18eceec623b4c9cb7",
+      "size_bytes": 27981
+    },
+    {
+      "path": "config.yaml",
+      "git_blob_sha": "ff3af5156432ce66b55b196f46a9b488a1e59fe1",
+      "sha256": "7598abc820b7f2eb3d9915e2b2d59e20e71b96819359310580457009e49331a3",
+      "size_bytes": 464
+    },
+    {
+      "path": "main.py",
+      "git_blob_sha": "e70ffd7004f120006b82c652a0e0342720b74789",
+      "sha256": "c918c500d01e31995e76d5aa54695bf480ddbd143bb5fe178d469b4db8904e13",
+      "size_bytes": 2300
+    },
+    {
+      "path": "prompts/__init__.py",
+      "git_blob_sha": "89092e5c484202e3d28691a5d47de666d5ad913d",
+      "sha256": "22e4af8d85c2147c6457d4a4c454076b5b1f9ef99c3629a674b76b5b722ca2eb",
+      "size_bytes": 146
+    },
+    {
+      "path": "prompts/deep_research_agent_prompts.py",
+      "git_blob_sha": "8fbabb481e1111a18269a918832a306784be365d",
+      "sha256": "833cc7b1de25435fe101faf728c39eef67c41002b4cf27a4cf21a36af033e6ad",
+      "size_bytes": 27899
+    },
+    {
+      "path": "prompts/juder_prompts.py",
+      "git_blob_sha": "f1ee0e83df4f0e189eff303c5fd7f36ec7b0687c",
+      "sha256": "397e60aff20ce975c51af6fc756fd4f93f6634dd6b9a64ff7984abd2845d91f1",
+      "size_bytes": 4458
+    },
+    {
+      "path": "prompts/review_agent_prompts.py",
+      "git_blob_sha": "140a7ca023559c64f977737da04c88049dce393a",
+      "sha256": "48cc47f3d92321feb40b7c41a7611f3358549a683bf2d4ddc8cad3dc51809f5b",
+      "size_bytes": 3749
+    },
+    {
+      "path": "requirements.txt",
+      "git_blob_sha": "79bf853d6378efe48830e3cfdb92d178488c8f6d",
+      "sha256": "c32cce0d1587ccd61dc89065347c179c89ede3b2ebcc5383a3d6fc816d7421d9",
+      "size_bytes": 124
+    },
+    {
+      "path": "searcher/__init__.py",
+      "git_blob_sha": "700d15cb8acab238c7e4405f4c535c2561df5538",
+      "sha256": "2058931317f193934ec33a39a3eb2e57380c477094226d04277671e6fdee41f1",
+      "size_bytes": 187
+    },
+    {
+      "path": "searcher/sementic_search.py",
+      "git_blob_sha": "e22b15c0d9ba66bde684d1f1e3d649cf379e9c59",
+      "sha256": "53cf1518c5fb5c3138813b1eefed36321f7a919c797bd3a4e71b16429e5b3973",
+      "size_bytes": 17878
+    },
+    {
+      "path": "utils.py",
+      "git_blob_sha": "5c6a953563948b6b0aca060861d34f5699e7ccdc",
+      "sha256": "eeb1f5a7281eabdcbab6366386618ba6970662f8696ce40af9b472de7a0c1fd7",
+      "size_bytes": 937
+    }
+  ],
+  "excluded_files": [
+    {
+      "path": ".DS_Store",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "__pycache__/LLM.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "__pycache__/agents.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "__pycache__/utils.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "assets/logo.jpg",
+      "reason": "branding images omitted; upstream README image references remain unchanged"
+    },
+    {
+      "path": "assets/title.png",
+      "reason": "branding images omitted; upstream README image references remain unchanged"
+    },
+    {
+      "path": "dataset/all_case.json",
+      "reason": "evaluation data and generated outputs are not needed for source integration"
+    },
+    {
+      "path": "dataset/case.json",
+      "reason": "evaluation data and generated outputs are not needed for source integration"
+    },
+    {
+      "path": "prompts/__pycache__/__init__.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "prompts/__pycache__/deep_research_agent_prompts.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "prompts/__pycache__/juder_prompts.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "prompts/__pycache__/review_agent_prompts.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "searcher/.DS_Store",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "searcher/__pycache__/__init__.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    },
+    {
+      "path": "searcher/__pycache__/sementic_search.cpython-310.pyc",
+      "reason": "machine metadata and bytecode caches omitted"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/SamuelSchmidgall/AgentLaboratory",
+  "commit": "d9017d90e329112d2a80b7712f37ee9094d2cd27",
+  "license": "MIT",
+  "retrieved": "2026-10-17",
+  "scope": "Selected original source files, not a complete runnable upstream checkout",
+  "files": [
+    {
+      "path": "LICENSE",
+      "sha256": "bf38a159d01e82d58f986c2d6dd06e03ba0b9cd59a6d286dd94109aac358e583",
+      "bytes": 1073,
+      "git_blob_sha": "23833fbb71c3d7c70fe04ea0b1c5deca35af2da4"
+    },
+    {
+      "path": "agents.py",
+      "sha256": "d8d1eda040eb1fa897d84596a1b36f277e83da75433c1a9ac2d9efe5be5c749a",
+      "bytes": 52333,
+      "git_blob_sha": "4d7759e44aa3e018710be2d2370e1316cb8da6bc"
+    },
+    {
+      "path": "mlesolver.py",
+      "sha256": "cc110f2b07642532cca11bd8cbf74becfc41016c7f876c16f6d40379ec59882c",
+      "bytes": 33070,
+      "git_blob_sha": "902eb5e2bc9a9972ce3b5e8c8116efaebba743c3"
+    },
+    {
+      "path": "papersolver.py",
+      "sha256": "8c16d68577570fbf6332d3f070e5aec975ed3fd3e1440918940f16eb8911366c",
+      "bytes": 33486,
+      "git_blob_sha": "e9b59519842aaabfd8b6ed281dce7a0c7a2b6fa1"
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "project_id": "toy-regularization",
+  "protocol_id": "PLAN-TOY-001-v1",
+  "version": 1,
+  "status": "draft",
+  "hypothesis_ids": [
+    "H-001"
+  ],
+  "primary_metric": {
+    "name": "test_mse",
+    "direction": "minimize",
+    "unit": "squared response units; absolute MSE difference",
+    "minimum_effect": 0.05,
+    "aggregation": "For each of 12 independent dataset seeds, compute d = OLS test MSE - ridge(lambda=0.1) test MSE. Report mean paired d and a two-sided 95% t interval (df=11)."
+  },
+  "secondary_metrics": [
+    {
+      "name": "fit_wall_seconds",
+      "purpose": "descriptive resource check"
+    },
+    {
+      "name": "coefficient_l2_norm",
+      "purpose": "exploratory mechanism clue, not mechanism proof"
+    }
+  ],
+  "data": {
+    "dataset_id": "synthetic-gaussian-linear-v1",
+    "version": "specification-v1; generator not implemented",
+    "fingerprint": null,
+    "split_policy": "Per seed: independent train n=64 and final test n=4096, d=32. Separate smoke seeds 11,12,13; final seeds 101..112. No tuning.",
+    "train_manifest": "artifacts/data/train-manifest.json (to be generated)",
+    "development_manifest": "artifacts/data/smoke-manifest.json (to be generated)",
+    "final_test_manifest": "artifacts/data/final-manifest.json (to be generated)",
+    "license_review": "No external dataset; synthetic generator and new code require review before release.",
+    "contamination_check": "No personal or external data. This is a public synthetic exercise, not a contamination-resistant benchmark."
+  },
+  "baselines": [
+    {
+      "id": "OLS",
+      "description": "Unregularized least squares using an SVD-based solver; intercept unpenalized. Same training-only standardization as candidates.",
+      "config": {
+        "lambda": 0.0
+      }
+    }
+  ],
+  "candidate": {
+    "description": "Ridge regression with fixed lambda=0.1; intercept unpenalized. Objective mean squared training residual + lambda * squared L2 coefficient norm.",
+    "change_scope": "Only the regularization coefficient differs from OLS.",
+    "search_space": "No hyperparameter search. lambda=0.1 fixed before any final result.",
+    "selection_rule": "No candidate selection from final results; report fixed primary comparison even if negative."
+  },
+  "seeds": [
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112
+  ],
+  "ablations": [
+    {
+      "id": "ridge-0.01",
+      "description": "Exploratory sensitivity to weaker penalty",
+      "config": {
+        "lambda": 0.01
+      }
+    },
+    {
+      "id": "ridge-1.0",
+      "description": "Exploratory sensitivity to stronger penalty",
+      "config": {
+        "lambda": 1.0
+      }
+    }
+  ],
+  "analysis": {
+    "independent_unit": "One newly sampled training/test dataset pair per seed. Individual test rows are not independent training replicates.",
+    "effect_estimator": "Mean of 12 paired differences (OLS MSE minus ridge-0.1 MSE). Positive is improvement.",
+    "interval_method": "Two-sided Student t interval for paired dataset-level differences, df=11. Inspect all differences; do not choose a new test after seeing results. Small-n and distributional assumptions disclosed.",
+    "interval_level": 0.95,
+    "multiple_comparisons": "One confirmatory primary contrast. All ablation contrasts descriptive/exploratory; no confirmatory significance claims.",
+    "missing_and_failed_runs": "Keep every failure. Retry only deterministic infrastructure interruption, same code/config/data, at most one retry each and six retries globally. If fewer than 12 complete primary pairs, report inconclusive and no confirmatory claim.",
+    "falsification_rule": "Support minimum-effect hypothesis only if lower interval bound > 0.05. If upper bound < 0.05, minimum-effect claim not supported; if upper bound < 0, evidence of degradation. If interval includes 0.05, inconclusive. Integrity failure invalidates affected evidence."
+  },
+  "budget": {
+    "max_runs": 66,
+    "max_wall_time_hours": 1,
+    "max_accelerator_hours": 0,
+    "max_api_cost": 0,
+    "currency": "USD",
+    "max_retries_per_run": 1,
+    "accounting_policy": "12 smoke fits + 48 final fits + at most 6 total retries = 66 attempts. Max 30 seconds per fit. Total one hour includes generation, failures, analysis and all subprocesses. Offline CPU only.",
+    "confirmation_reserve": "Reserve 48 fit attempts for all final methods; do not consume reserve on exploration. No discretionary search."
+  },
+  "evaluation": {
+    "evaluator_version": "specification-v1; evaluator not implemented",
+    "evaluator_sha256": null,
+    "protected_paths": [
+      "evaluation/",
+      "data/final/",
+      "protocols/",
+      "preregistration.json"
+    ],
+    "editable_paths": [
+      "methods/"
+    ],
+    "final_test_access_policy": "One planned final batch after code, data, evaluator and protocol are frozen; execute all four methods without adaptive changes. Separate custodian account required for actual isolation.",
+    "max_final_test_accesses": 1,
+    "holdout_custodian": null,
+    "baseline_fairness_rule": "Same generated train/test pairs, preprocessing, numeric precision, solver tolerance and CPU constraints; no method-specific tuning.",
+    "evaluator_path": "evaluation/score.py"
+  },
+  "environment": {
+    "code_commit": null,
+    "dependency_lock": null,
+    "hardware": "CPU only; exact hardware and numeric library versions must be recorded before freezing.",
+    "model_or_api_version": "Not applicable: no language model/API calls.",
+    "network_policy": "deny_by_default"
+  },
+  "stopping_rules": [
+    "Stop at one hour total wall time or 66 total fit attempts, whichever comes first.",
+    "Stop any fit at 30 seconds.",
+    "Pause on non-finite data/metric, mismatched hashes, unexpected network access or evaluator modification.",
+    "If implementation bug is found after final results, preserve original run, mark invalid, and seek a new plan; do not silently repair and reuse final data as unseen."
+  ],
+  "approval": {
+    "decision_id": null,
+    "reviewer": null,
+    "approved_at": null
+  },
+  "amendments": []
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "run_id": null,
+  "project_id": null,
+  "protocol_id": null,
+  "protocol_sha256": null,
+  "hypothesis_id": null,
+  "parent_run_id": null,
+  "retry_of": null,
+  "phase": null,
+  "status": "planned",
+  "method": null,
+  "seed": null,
+  "code_commit": null,
+  "config_sha256": null,
+  "data_fingerprint": null,
+  "evaluator_sha256": null,
+  "environment_manifest": null,
+  "started_at": null,
+  "ended_at": null,
+  "exit_code": null,
+  "metrics": null,
+  "cost": {
+    "wall_time_seconds": null,
+    "accelerator_seconds": null,
+    "api_cost": null,
+    "currency": "USD"
+  },
+  "artifacts": [],
+  "failure_reason": null,
+  "integrity_flags": [],
+  "notes": "填写后每行写入一个完整 JSON 对象。未执行时保留 planned，不能填入假想结果。"
+}

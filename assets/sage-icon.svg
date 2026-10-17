@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">SAGE symbol</title>
+  <desc id="desc">An S-shaped evidence path joins three nodes on a deep green rounded square.</desc>
+  <rect width="128" height="128" rx="30" fill="#152f2b"/>
+  <path d="M87 35H53c-12 0-21 7-21 17s9 17 21 17h22c12 0 21 7 21 17S87 103 75 103H41" transform="translate(0 -5)" fill="none" stroke="#b7dbc3" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="87" cy="30" r="8" fill="#e5b567"/>
+  <circle cx="64" cy="64" r="7" fill="#f8faf4"/>
+  <circle cx="41" cy="98" r="8" fill="#b7dbc3"/>
+</svg>
