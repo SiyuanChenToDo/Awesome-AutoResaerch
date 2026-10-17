@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-10-17",
+  "scope": "Primary-source metadata and README review for selected records only; no runtime, performance or exhaustive link verification. Source archives remain unchanged.",
+  "checks": [
+    {
+      "url": "https://github.com/karpathy/autoresearch",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/karpathy/autoresearch"
+      ],
+      "capability_evidence": "README describes train.py as the editable implementation, prepare.py as fixed, program.md as human instructions, five-minute training budgets on a single NVIDIA GPU.",
+      "corrections": [
+        {
+          "field": "license",
+          "source_value": "—",
+          "checked_value": "MIT",
+          "evidence_url": "https://github.com/karpathy/autoresearch"
+        }
+      ],
+      "limitations": "README review only. A five-minute training budget excludes other workflow costs; results on different hardware are not directly comparable. Permission-bypass suggestions are not adopted.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://github.com/Future-House/paper-qa",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/Future-House/paper-qa"
+      ],
+      "capability_evidence": "README describes scientific-document RAG, source-backed answers, agentic queries and local document reading; Apache-2.0.",
+      "corrections": [],
+      "limitations": "Not installed or run. Search completeness and citation correctness require independent evidence checks.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://github.com/SakanaAI/AI-Scientist-v2",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/SakanaAI/AI-Scientist-v2",
+        "https://github.com/SakanaAI/AI-Scientist-v2/blob/main/LICENSE"
+      ],
+      "capability_evidence": "README describes hypothesis-to-manuscript workflow and progressive agentic tree search; Linux/NVIDIA/CUDA/PyTorch requirements.",
+      "corrections": [
+        {
+          "field": "license",
+          "source_value": "NOASSERTION（自定义条款）",
+          "checked_value": "The AI Scientist Source Code License; NOASSERTION is an identification status, not the license name.",
+          "evidence_url": "https://github.com/SakanaAI/AI-Scientist-v2/blob/main/LICENSE"
+        }
+      ],
+      "limitations": "Not run. README says v2 is not necessarily better than v1; template tasks may favor v1. Generated-code execution needs isolation. License includes machine-generated paper disclosure requirements.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://github.com/junjunjunbong/research-loop",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/junjunjunbong/research-loop"
+      ],
+      "capability_evidence": "README describes deterministic runner, plan hash, isolated worktree, frozen metric/compatibility fields, append-only ledger and count/wall-clock budgets.",
+      "corrections": [],
+      "limitations": "Not run. v0.3 scope excludes GPU, remote, paid execution, Slurm, SSH and Kubernetes. Borrow the contract; do not assume a universal GPU backend.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://github.com/xieyulai/steer",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/xieyulai/steer"
+      ],
+      "capability_evidence": "README describes frozen task/data/scorer/budget, writable workspace only, run diffs/logs/scores, naive/public baselines and human audit; Apache-2.0.",
+      "corrections": [],
+      "limitations": "Not run. These controls are design inspiration; this workbench has not implemented execution isolation.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://github.com/aiidateam/aiida-core",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/aiidateam/aiida-core"
+      ],
+      "capability_evidence": "README describes computational workflow input/output/metadata provenance graphs, checkpoints and HPC scheduler interfaces; MIT.",
+      "corrections": [],
+      "limitations": "Not run. Suitable as a later adapter; README warns against installing directly from main.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://github.com/openai/frontier-evals",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/openai/frontier-evals",
+        "https://github.com/openai/frontier-evals/tree/main/project/paperbench",
+        "https://arxiv.org/abs/2504.01848"
+      ],
+      "capability_evidence": "Official repository contains PaperBench under project/paperbench/. PaperBench primary paper describes 20 ICML 2024 Spotlight/Oral papers and 8,316 rubric subtasks.",
+      "corrections": [],
+      "limitations": "No PaperBench tasks or graders were executed. Small local scaffold checks are not benchmark results.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://github.com/microsoft/autogen",
+      "checked_at": "2026-10-17",
+      "kind": "repository",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://github.com/microsoft/autogen"
+      ],
+      "capability_evidence": "README labels the project archived/no longer maintained and recommends Microsoft Agent Framework. Legal notices distinguish code and documentation licenses.",
+      "corrections": [
+        {
+          "field": "license",
+          "source_value": "CC-BY-4.0",
+          "checked_value": "Code: MIT; documentation and other content: CC-BY-4.0 (see Legal Notices).",
+          "evidence_url": "https://github.com/microsoft/autogen"
+        }
+      ],
+      "limitations": "Not run. Excluded as a default dependency for a new system; replacing it with another framework still requires separate evaluation.",
+      "runtime_tested": false
+    },
+    {
+      "url": "https://arxiv.org/abs/2504.08066",
+      "checked_at": "2026-10-17",
+      "kind": "paper",
+      "status": "primary_source_checked",
+      "verification_type": "metadata_and_readme",
+      "evidence_urls": [
+        "https://arxiv.org/abs/2504.08066",
+        "https://arxiv.org/abs/2504.01848"
+      ],
+      "capability_evidence": "Primary title identifies The AI Scientist-v2: Workshop-Level Automated Scientific Discovery via Agentic Tree Search.",
+      "corrections": [
+        {
+          "field": "timeline_ai_scientist_v2_paper_url",
+          "source_value": "https://arxiv.org/abs/2504.01848",
+          "checked_value": "https://arxiv.org/abs/2504.08066",
+          "evidence_url": "https://arxiv.org/abs/2504.08066"
+        }
+      ],
+      "limitations": "Metadata/title check only, not reproduction or validation of the reported performance.",
+      "runtime_tested": false
+    }
+  ]
+}

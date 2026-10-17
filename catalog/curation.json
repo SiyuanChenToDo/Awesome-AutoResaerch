@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "meaning": "Priorities P1/P2 are proposed adoption priority, not roadmap phases or empirical rankings. planned means no integration implemented.",
+  "entries": [
+    {
+      "id": "github-future-house-paper-qa-d901bca41431",
+      "stages": [
+        "literature"
+      ],
+      "priority": "P1",
+      "integration_status": "planned",
+      "borrow": "带来源的文献读取与问答接口，返回证据定位而非只返回摘要。",
+      "caution": "检索召回与引用准确性需独立抽检。",
+      "related_ids": []
+    },
+    {
+      "id": "github-karpathy-autoresearch-f226959a357f",
+      "stages": [
+        "implementation",
+        "experimentation"
+      ],
+      "priority": "P1",
+      "integration_status": "planned",
+      "borrow": "固定预算、狭窄可修改面、保留/丢弃循环。",
+      "caution": "把训练预算扩展成全流程成本账本；不要只按单一指标选择。",
+      "related_ids": []
+    },
+    {
+      "id": "github-junjunjunbong-research-loop-16b8a289881c",
+      "stages": [
+        "experimentation",
+        "review"
+      ],
+      "priority": "P1",
+      "integration_status": "planned",
+      "borrow": "plan hash、worktree、追加账本、确定性规则。",
+      "caution": "其 v0.3 非通用 GPU/远程后端；本仓库只实现结构校验。",
+      "related_ids": []
+    },
+    {
+      "id": "github-xieyulai-steer-bd9c0a9d597f",
+      "stages": [
+        "experimentation",
+        "evaluation"
+      ],
+      "priority": "P1",
+      "integration_status": "planned",
+      "borrow": "冻结任务/数据/评分器，保留 diff 和审计证据。",
+      "caution": "实际隔离与权限边界需单独实现和验证。",
+      "related_ids": []
+    },
+    {
+      "id": "github-sakanaai-ai-scientist-v2-66c0302d825d",
+      "stages": [
+        "ideation",
+        "experimentation",
+        "writing"
+      ],
+      "priority": "P2",
+      "integration_status": "planned",
+      "borrow": "假设树和基于实验的分支选择；观察端到端产物契约。",
+      "caution": "源代码许可证需审阅，不默认无人值守，v2 并非普遍优于 v1。",
+      "related_ids": [
+        "arxiv-2504-08066"
+      ]
+    },
+    {
+      "id": "arxiv-2504-01848",
+      "stages": [
+        "evaluation",
+        "review"
+      ],
+      "priority": "P1",
+      "integration_status": "planned",
+      "borrow": "把复现任务拆成可评分的细颗粒 rubric 和证据要求。",
+      "caution": "先做本地缩小任务；不要把脚手架校验说成 PaperBench 成绩。",
+      "related_ids": [
+        "github-openai-frontier-evals-d8d68dd5b764"
+      ]
+    },
+    {
+      "id": "github-aiidateam-aiida-core-1016dbaf89bd",
+      "stages": [
+        "experimentation",
+        "memory"
+      ],
+      "priority": "P2",
+      "integration_status": "planned",
+      "borrow": "复杂计算中的输入/输出溯源图、恢复和调度。",
+      "caution": "P0 不需要部署数据库/调度服务。",
+      "related_ids": []
+    },
+    {
+      "id": "github-lamm-mit-sciagentsdiscovery-d906a6789287",
+      "stages": [
+        "ideation"
+      ],
+      "priority": "P2",
+      "integration_status": "planned",
+      "borrow": "探索知识图谱辅助假设生成。",
+      "caution": "仅从附件收录，不在本次独立 README 抽查范围；先核对来源与许可。",
+      "related_ids": []
+    },
+    {
+      "id": "arxiv-2404-07738",
+      "stages": [
+        "literature",
+        "ideation"
+      ],
+      "priority": "P1",
+      "integration_status": "planned",
+      "borrow": "从文献到想法的迭代流程作为阅读对象。",
+      "caution": "仅来源收录；设计借鉴须回到论文细节。",
+      "related_ids": []
+    },
+    {
+      "id": "arxiv-2409-04109",
+      "stages": [
+        "ideation",
+        "evaluation"
+      ],
+      "priority": "P1",
+      "integration_status": "planned",
+      "borrow": "思考想法新颖性与专家评价的研究设计。",
+      "caution": "人类评价、模型评分和真实实验效果不能等同。",
+      "related_ids": []
+    }
+  ]
+}

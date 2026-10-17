@@ -1,0 +1,60 @@
+{
+  "source_id": "2026-10-14-autoresearch",
+  "source_reported_arxiv_count": 176,
+  "extracted_unique_arxiv_ids": 175,
+  "extracted_unique_github_repositories": 147,
+  "missing_source_attachments": [
+    {
+      "path": "literatures/data/",
+      "lines": [
+        5
+      ],
+      "status": "missing_source_attachment"
+    },
+    {
+      "path": "literatures/data/autoresearch-papers.csv",
+      "lines": [
+        640
+      ],
+      "status": "missing_source_attachment"
+    },
+    {
+      "path": "literatures/data/autoresearch-repos.csv",
+      "lines": [
+        640
+      ],
+      "status": "missing_source_attachment"
+    },
+    {
+      "path": "research/01-papers.md",
+      "lines": [
+        639
+      ],
+      "status": "missing_source_attachment"
+    },
+    {
+      "path": "research/02-repos.md",
+      "lines": [
+        260,
+        261,
+        639
+      ],
+      "status": "missing_source_attachment"
+    },
+    {
+      "path": "research/03-hf-and-products.md",
+      "lines": [
+        639
+      ],
+      "status": "missing_source_attachment"
+    },
+    {
+      "path": "research/04-benchmarks-and-risks.md",
+      "lines": [
+        639
+      ],
+      "status": "missing_source_attachment"
+    }
+  ],
+  "scope": "Markdown-link extraction only; original source claims were not inherited as new verification."
+}

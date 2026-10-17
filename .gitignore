@@ -1,0 +1,16 @@
+# Unpublished research and large artifacts stay local by default.
+projects/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+*.tmp
+outputs/
+data/private/

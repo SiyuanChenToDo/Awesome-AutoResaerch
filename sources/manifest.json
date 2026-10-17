@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "2026-10-14-autoresearch",
+      "snapshot_date": "2026-10-14",
+      "path": "sources/snapshots/2026-10-14-autoresearch.md",
+      "sha256": "bc4141eb87f1260846acfafb148e836edeb3329a411ec86ec7d3a85f8adf51f6",
+      "original_filename": "AutoResearch-专线清单-2026-10.md",
+      "verification_scope": "Imported bytes only; source claims are not independently verified"
+    }
+  ]
+}

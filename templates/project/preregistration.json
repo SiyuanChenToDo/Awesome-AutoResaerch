@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "project_id": "{{PROJECT_ID}}",
+  "protocol_id": "PLAN-001-v1",
+  "version": 1,
+  "status": "draft",
+  "hypothesis_ids": [
+    "H-001"
+  ],
+  "primary_metric": {
+    "name": null,
+    "direction": null,
+    "unit": null,
+    "minimum_effect": null,
+    "aggregation": null
+  },
+  "secondary_metrics": [],
+  "data": {
+    "dataset_id": null,
+    "version": null,
+    "fingerprint": null,
+    "split_policy": null,
+    "train_manifest": null,
+    "development_manifest": null,
+    "final_test_manifest": null,
+    "license_review": null,
+    "contamination_check": null
+  },
+  "baselines": [],
+  "candidate": {
+    "description": null,
+    "change_scope": null,
+    "search_space": null,
+    "selection_rule": null
+  },
+  "seeds": [],
+  "ablations": [],
+  "analysis": {
+    "independent_unit": null,
+    "effect_estimator": null,
+    "interval_method": null,
+    "interval_level": null,
+    "multiple_comparisons": null,
+    "missing_and_failed_runs": null,
+    "falsification_rule": null
+  },
+  "budget": {
+    "max_runs": null,
+    "max_wall_time_hours": null,
+    "max_accelerator_hours": null,
+    "max_api_cost": null,
+    "currency": "USD",
+    "max_retries_per_run": null,
+    "accounting_policy": null,
+    "confirmation_reserve": null
+  },
+  "evaluation": {
+    "evaluator_version": null,
+    "evaluator_sha256": null,
+    "protected_paths": [],
+    "editable_paths": [],
+    "final_test_access_policy": null,
+    "max_final_test_accesses": null,
+    "holdout_custodian": null,
+    "baseline_fairness_rule": null,
+    "evaluator_path": null
+  },
+  "environment": {
+    "code_commit": null,
+    "dependency_lock": null,
+    "hardware": null,
+    "model_or_api_version": null,
+    "network_policy": "deny_by_default"
+  },
+  "stopping_rules": [],
+  "approval": {
+    "decision_id": null,
+    "reviewer": null,
+    "approved_at": null
+  },
+  "amendments": []
+}
