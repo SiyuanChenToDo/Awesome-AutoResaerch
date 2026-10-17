@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+  <title id="title">SAGE — Scientific Agent for Grounded Exploration</title>
+  <desc id="desc">Research ideas, grounded in evidence. An original evidence-chain emblem and a diagram connecting source papers to a research proposal. A modular research proposal workflow.</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#c7d7ca"/>
+    </pattern>
+  </defs>
+  <rect x=".5" y=".5" width="1199" height="439" rx="24" fill="#f8faf4" stroke="#dce5db"/>
+  <path d="M744 1h432a23 23 0 0 1 23 23v392a23 23 0 0 1-23 23H744Z" fill="#eef3e9"/>
+  <path d="M744 24h432v392H744Z" fill="url(#grid)"/>
+  <g transform="translate(48 42) scale(.625)">
+    <rect width="128" height="128" rx="30" fill="#152f2b"/>
+    <path d="M87 30H53c-12 0-21 7-21 17s9 17 21 17h22c12 0 21 7 21 17s-9 17-21 17H41" fill="none" stroke="#b7dbc3" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="87" cy="30" r="8" fill="#e5b567"/>
+    <circle cx="64" cy="64" r="7" fill="#f8faf4"/>
+    <circle cx="41" cy="98" r="8" fill="#b7dbc3"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#152f2b">
+    <text x="149" y="102" font-size="66" font-weight="700" letter-spacing="5">SAGE</text>
+    <text x="50" y="155" font-size="17" fill="#476355">Scientific Agent for Grounded Exploration</text>
+    <text x="48" y="233" font-size="44" font-weight="700" letter-spacing="-1">Research ideas.</text>
+    <text x="48" y="285" font-size="44" font-weight="700" letter-spacing="-1">Grounded in evidence.</text>
+    <text x="50" y="331" font-size="18" fill="#476355">A modular research proposal workflow.</text>
+    <path d="M50 366h632" stroke="#cedbce"/>
+    <text x="50" y="399" font-size="13" font-weight="700" letter-spacing="2.5">DISCOVER</text>
+    <circle cx="195" cy="394" r="2.5" fill="#93ab98"/>
+    <text x="223" y="399" font-size="13" font-weight="700" letter-spacing="2.5">CONNECT</text>
+    <circle cx="368" cy="394" r="2.5" fill="#93ab98"/>
+    <text x="396" y="399" font-size="13" font-weight="700" letter-spacing="2.5">PROPOSE</text>
+  </g>
+  <!-- Source cards and the proposal are schematic, not research results. -->
+  <g fill="none" stroke="#90ad97" stroke-width="2">
+    <path d="M841 118h58c23 0 37 18 37 41v88"/>
+    <path d="M833 247h103"/>
+    <path d="M835 348h62c24 0 39-17 39-41v-60h45"/>
+  </g>
+  <g fill="#fff" stroke="#c5d6c6" stroke-width="1.5">
+    <rect x="786" y="72" width="104" height="91" rx="12"/>
+    <rect x="780" y="202" width="104" height="91" rx="12"/>
+    <rect x="786" y="307" width="104" height="68" rx="12"/>
+  </g>
+  <g stroke="#9bb4a0" stroke-width="3" stroke-linecap="round">
+    <path d="M805 110h58m-58 11h44m-44 11h51"/>
+    <path d="M799 240h58m-58 11h44m-44 11h51"/>
+    <path d="M805 338h58m-58 11h44"/>
+  </g>
+  <g fill="#476355" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" letter-spacing="1.5">
+    <text x="805" y="96">SOURCE 01</text>
+    <text x="799" y="226">SOURCE 02</text>
+    <text x="805" y="327">SOURCE 03</text>
+  </g>
+  <circle cx="936" cy="247" r="8" fill="#e5b567" stroke="#f8faf4" stroke-width="3"/>
+  <rect x="981" y="175" width="170" height="145" rx="17" fill="#152f2b"/>
+  <g fill="#f8faf4" font-family="Arial, Helvetica, sans-serif">
+    <text x="1001" y="205" font-size="11" font-weight="700" letter-spacing="1.6">PROPOSAL</text>
+    <text x="1001" y="286" font-size="12" fill="#b7dbc3">Evidence-linked idea</text>
+    <text x="1001" y="303" font-size="12" fill="#b7dbc3">Ready for review</text>
+  </g>
+  <g fill="none" stroke="#b7dbc3" stroke-linecap="round" stroke-width="3">
+    <path d="M1004 252l24-21 27 13 27-21 28 12"/>
+  </g>
+  <g fill="#e5b567">
+    <circle cx="1004" cy="252" r="4"/>
+    <circle cx="1028" cy="231" r="4"/>
+    <circle cx="1055" cy="244" r="4"/>
+    <circle cx="1082" cy="223" r="4"/>
+    <circle cx="1110" cy="235" r="4"/>
+  </g>
+  <text x="981" y="348" fill="#476355" font-family="Arial, Helvetica, sans-serif" font-size="10" letter-spacing="1.5">SOURCES BEFORE CLAIMS</text>
+</svg>
