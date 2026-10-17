@@ -36,7 +36,7 @@ SAGE = **Scientific Agent for Grounded Exploration（基于证据探索的科研
 | `improve_experiment()` | experiment_design + review，由 [orchestration](../sage/orchestration/) 组织 | 有限评审/修订，不自增无限“直到通过”循环 |
 | `LLM.py` 的 response / embedding 与 Azure 配置 | providers.py；[runtime.py](../sage/runtime.py) 管理调用 | 延迟加载 OpenAI SDK、显式布尔解析、主/便宜模型注入、单次请求与外层统一重试 |
 | `main.py` 的入口/参数/结果文件 | `python -m sage`；orchestration | 不读取上游 config，不 import 上游，不在导入时外联；写结构化提案与审计 |
-| 上游没有实验/写作 runner | [execution](../sage/execution/) / [writing](../sage/writing/) | 仅 Protocol 接口，保留 `not_implemented`，不虚构能力 |
+| 上游没有实验/写作 runner | [execution](../sage/execution/) / [writing](../sage/writing/) | CoI 提案入口仍不执行；后续 Agent Laboratory 衍生链见 [独立对照](agent-laboratory-migration.md) |
 
 ## 3. 全部原始提示词函数的去向
 
@@ -85,7 +85,7 @@ SAGE = **Scientific Agent for Grounded Exploration（基于证据探索的科研
 
 ### 软件契约审计与科学评价分开
 
-确定性契约检查独立于模型生成回答，按稳定规则核对结构和关联，避免模型自行宣告产物通过；它不验证论文本身、证据支持程度、实验效果、因果解释或最终测试隔离。`scientific_validation` 保持 `not_performed`，实验与写作能力保持未实现。
+确定性契约检查独立于模型生成回答，按稳定规则核对结构和关联，避免模型自行宣告产物通过；它不验证论文本身、证据支持程度、实验效果、因果解释或最终测试隔离。CoI 提案入口的 `scientific_validation` 保持 `not_performed`；实验迭代与报告另由显式 laboratory 入口提供，不能从提案生成推断已执行。
 
 ### 传输与日期过滤取舍
 
@@ -93,7 +93,7 @@ SAGE = **Scientific Agent for Grounded Exploration（基于证据探索的科研
 
 ### 离线验证与联网行为分开
 
-离线 fake providers 经过同一控制器、模块、解析与预算路径，可测试成功和负向边界；固定材料不能支持科研效果结论。live 适配器有超时、有限响应与外层请求预算，不代表已完成真实 API 兼容性、召回率、费用或模型质量验证。重试/最大输出 token 的预留不是真实美元预算；操作系统沙箱、可信审批和独立科学评价均未实现。
+离线 fake providers 经过同一控制器、模块、解析与预算路径，可测试成功和负向边界；固定材料不能支持科研效果结论。live 适配器有超时、有限响应与外层请求预算，不代表已完成真实 API 兼容性、召回率、费用或模型质量验证。重试/最大输出 token 的预留不是真实美元预算；CoI 提案入口不执行代码；后续 Docker 适配器的存在不证明生产隔离、可信审批或独立科学评价已完成。
 
 ## 5. 运行与回归入口
 
@@ -105,4 +105,4 @@ python scripts/check.py
 
 产物、live 环境与 local article 格式见[运行说明](sage-runtime.md)。目录/项目原命令继续兼容，并通过 `python -m sage catalog ...` / `python -m sage project ...` 暴露。旧归档 inspect/prepare 继续存在；它与 SAGE 的模块化实现分别验证，不需要启动上游依赖。
 
-本次不改变其他工具状态：autoresearch 是用户指定的计划完成，仍 `not_run` / `not_integrated`；Agent Laboratory 仍未导入或集成。后续科研效果验证应单独预注册基线、任务、预算与人工参与，而不是从软件检查通过推断。
+本次不改变其他工具状态：autoresearch 是用户指定的计划完成，仍 `not_run` / `not_integrated`；Agent Laboratory 的后续代码迭代和报告迁移现见[独立对照](agent-laboratory-migration.md)，不改变 CoI 本身的复现边界。后续科研效果验证应单独预注册基线、任务、预算与人工参与，而不是从软件检查通过推断。

@@ -17,3 +17,7 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 - 旧 [coi_patches.json](modules/orchestration/coi_patches.json)仅由兼容准备器生成带修改记录的私有归档副本；它不是 SAGE 运行依赖。
 
 第三方许可适用于对应上游及派生部分，不自动为本仓库所有原创部分新增统一许可证。分发或进一步修改前应审查各部分的具体权利和义务。
+
+## Agent Laboratory 来源与派生代码
+
+上游 [SamuelSchmidgall/AgentLaboratory](https://github.com/SamuelSchmidgall/AgentLaboratory)，固定提交 `d9017d90e329112d2a80b7712f37ee9094d2cd27`。MIT License，Copyright (c) 2025 Samuel Schmidgall。完整许可见 [LICENSES/Agent-Laboratory-MIT.txt](LICENSES/Agent-Laboratory-MIT.txt)，原文件和哈希见[来源归档](third_party/agent_laboratory/README.md)。维护中的执行、写作与报告评审派生部分保留来源和修改说明；[迁移表](docs/agent-laboratory-migration.md)列明实际改造及未迁移功能。该许可不改变本仓库其他原创部分的许可状态。

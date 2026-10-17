@@ -10,8 +10,8 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 | [experiment_design](experiment_design/README.md) | 想法/相关文献/意见 → 方案与修订历史 | 方案生成与补充证据修订；不执行实验 |
 | [review](review/README.md) | 候选/方案/证据 → 新颖性、六维比较、评审与契约检查 | 模型评审和确定性结构核验；不是科学评价器 |
 | [orchestration](orchestration/README.md) | 配置/提供方 → 研究提案产物与调用记录 | 同一 offline/live 控制器，有界重试与调用/时间预算 |
-| [execution](execution/README.md) | 批准的协议 → 未来真实运行 | Protocol-only，runner 未实现 |
-| [writing](writing/README.md) | 审核过的证据 → 未来稿件 | Protocol-only，runner 未实现 |
+| [execution](execution/README.md) | 方案/冻结契约 → 尝试与评价状态 | 有界代码候选、修复、固定开发评价与显式后端 |
+| [writing](writing/README.md) | 提案/证据/运行状态 → 报告草稿 | 按节报告草稿、评审与有限修订 |
 
 ## 代码、来源与测试分开看
 
@@ -25,6 +25,6 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 
 ## 资料与项目状态
 
-资料目录仍由 [catalog](../catalog/README.md)管理。研究流程的人工门禁见[工作流](../docs/workflow.md)。Agent Laboratory 尚未导入或集成；autoresearch 保持用户指定的计划 `completed`，运行与集成仍是 `not_run` / `not_integrated`。
+资料目录仍由 [catalog](../catalog/README.md)管理。研究流程的人工门禁见[工作流](../docs/workflow.md)。Agent Laboratory 的代码迭代和报告机制已拆入；原始上游流程未独立运行，真实模型与容器链尚未实测；autoresearch 保持用户指定的计划 `completed`，运行与集成仍是 `not_run` / `not_integrated`。
 
 [返回 SAGE 首页](../README.md)

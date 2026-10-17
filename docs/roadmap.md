@@ -10,7 +10,7 @@
 |---|---|---|---|
 | [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | `completed`，按用户要求完成 | 不再进入后续复现优先队列；保留历史资料和机制借鉴 | `not_run` / `not_integrated` |
 | CoI-Agent（[Chain of Ideas](https://arxiv.org/abs/2410.13185)） | `in_progress` | 以不可变快照为来源，将核心提案链和提示词拆为 SAGE 功能模块 | 原始上游仍 `not_run` / `source_imported`；SAGE 有独立离线运行与可选 live 适配器 |
-| [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) | `planned` | 后续研究独特机制、代码入口及模块功能 | `not_run` / `not_integrated`，尚未导入 |
+| [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) | `in_progress` | 代码编辑/修复、冻结评价、候选保留、报告分节写作/评审已按功能拆入 | 上游 `not_run`；SAGE 衍生链离线验证，真实模型与 Docker 运行未验证 |
 
 **状态边界**：autoresearch 的计划完成不表示安装、运行或复现；不能因此升级[核验记录](../catalog/verification.json)。[curation.json](../catalog/curation.json)保留来源项目的计划/导入状态；SAGE 自有代码的能力以运行包和最终检查结果为准，不用目录元数据代替软件验证。
 
@@ -21,9 +21,9 @@
 - 查询/改写、双向文献链、提取、趋势/实体、未来方向、候选/定稿、有限判新再生成、六维两两比较、方案/评审/补充证据修订串联。
 - 命名 dataclass、严格输出解析、有限重试、请求/输出 token 预留与时间上限、错误及结构审计。
 - 当前 live 无自动 PDF 下载/解析；默认 abstract-only，可显式提供本地 article。未完成真实服务实测或科研效果验证。
-- execution/writing 为 Protocol-only，无实验 runner、自动写作、可信审批或 OS 沙箱。
+- Agent Laboratory 衍生的 execution/writing 代码包含有界候选迭代、默认 dry-run、合成 fixture 后端和报告草稿；Docker 为显式 opt-in 路径，当前环境未实测。可信审批、生产隔离与独立科学评价仍待验证。
 
-源方法对照及安全偏离见[迁移说明](sage-migration.md)，可执行命令见[运行说明](sage-runtime.md)。下一步优先验证故障/不确定性和真实服务的受控接通，再单独设计科研质量对照；Agent Laboratory 的接入不因本次改造自动完成。
+源方法对照及安全偏离见[迁移说明](sage-migration.md)，可执行命令见[运行说明](sage-runtime.md)。下一步优先验证故障/不确定性和真实服务的受控接通，再单独设计科研质量对照；Agent Laboratory 的迁移范围和执行边界见[独立对照](agent-laboratory-migration.md)。
 
 ## P0：可搬走的研究包（已提供基础）
 
@@ -39,9 +39,9 @@
 
 **边界**：检查文件存在和字段有效不等于计划科学有效，也不等于审批可信。P0 不运行训练、不启动无人值守循环、不承诺自动审稿或可发表性。
 
-## P1：一个低风险本地执行适配器（待实现）
+## P1：一个低风险本地执行适配器（部分实现，生产验收未完成）
 
-范围：仅批准代码、离线合成数据、固定入口和资源上限；一次只做一个明确实验。先实现本地受限执行，再考虑多 Agent。
+范围：仅批准代码、离线合成数据、固定入口和资源上限；一次只做一个明确实验。已提供实验迭代和显式 Docker 适配入口；默认 dry-run 与合成 fixture 不构成真实隔离验证。下列生产验收条件仍需逐项检查。
 
 验收：
 
@@ -67,7 +67,7 @@
 
 ## P3：可替换的研究能力接入（文献/提案部分已实现）
 
-范围：文献检索、想法与实验方案模块及可替换提供方已实现；受限实验后端尚未实现。接下来在授权/预算内验证 live 服务与来源质量，再开展科学效果对照。模型、工具和供应商不进入核心文件格式。
+范围：文献检索、想法与实验方案模块及可替换提供方已实现；新增有界实验控制器、fixture 与显式 Docker 后端；真实容器和任务兼容性尚未实测。接下来在授权/预算内验证 live 服务与来源质量，再开展科学效果对照。模型、工具和供应商不进入核心文件格式。
 
 验收：
 

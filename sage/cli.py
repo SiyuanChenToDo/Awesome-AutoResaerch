@@ -112,6 +112,80 @@ async def execute(args, config, articles):
             await provider.aclose()
 
 
+async def execute_laboratory(args, config, articles):
+    from .execution.contracts import EvaluationContract
+    from .execution.fixtures import LaboratoryFixtureModel, TrustedFixtureBackend, fixture_contract
+    from .orchestration.laboratory import run_laboratory
+    if args.mode == 'live' and not args.contract:
+        raise ConfigurationError('Live laboratory requires an explicit reviewed --contract; only scalar development MSE is supported')
+    if args.contract:
+        values = load_json(args.contract)
+        for field in ('features', 'targets'):
+            if isinstance(values.get(field), list):
+                values[field] = tuple(values[field])
+        try:
+            contract = EvaluationContract(**values)
+        except TypeError:
+            raise ConfigurationError('Unknown or missing EvaluationContract field') from None
+    else:
+        contract = fixture_contract()
+    backend = None
+    if args.backend != 'dry-run' and not args.allow_execution:
+        raise ConfigurationError('Selected backend requires --allow-execution')
+    if args.backend == 'fixture':
+        if args.mode != 'offline' or contract != fixture_contract():
+            raise ConfigurationError('Fixture backend only supports offline synthetic fixture contract')
+        backend = TrustedFixtureBackend()
+    elif args.backend == 'docker':
+        if not args.contract or not args.docker_image:
+            raise ConfigurationError('Docker requires --contract and --docker-image pinned to a digest')
+        from .execution.docker import DockerBackend
+        backend = DockerBackend(image=args.docker_image, allow_execution=args.allow_execution)
+    if args.allow_execution and backend is None:
+        raise ConfigurationError('Choose an execution backend or omit --allow-execution')
+    approved = args.approved_contract_digest
+    if args.backend == 'fixture':
+        approved = contract.sha256  # explicit fixture execution approves only the fixed synthetic contract
+    if backend and approved != contract.sha256:
+        raise ConfigurationError('Execution requires --approved-contract-digest matching reviewed full contract')
+    models = []
+    if args.mode == 'offline':
+        model = cheap = LaboratoryFixtureModel()
+        source = FixtureSource()
+    else:
+        if not args.allow_live:
+            raise ConfigurationError('Live mode requires --allow-live; model calls transmit data and may incur charges')
+        from .providers import OpenAIModel, SemanticScholarSource
+        model = OpenAIModel.from_env(role='main', timeout=config.request_timeout_seconds)
+        cheap = OpenAIModel.from_env(role='cheap', timeout=config.request_timeout_seconds)
+        source = SemanticScholarSource.from_env(timeout=config.request_timeout_seconds)
+        models = [model, cheap]
+    destination = output_directory(args.output)
+    try:
+        result = await run_laboratory(args.topic, model, source, contract=contract, cheap_model=cheap,
+            config=config, mode=args.mode, articles=articles, backend=backend,
+            allow_execution=args.allow_execution, approved_contract_digest=approved)
+        (destination / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+        (destination / 'config.json').write_text(json.dumps(config.to_dict(), indent=2)+'\n', encoding='utf-8')
+        (destination / 'contract.json').write_text(json.dumps(__import__('dataclasses').asdict(contract), indent=2)+'\n', encoding='utf-8')
+        (destination / 'audit.jsonl').write_text(''.join(json.dumps(e)+'\n' for e in result['audit']), encoding='utf-8')
+        if result['execution']:
+            candidates = destination / 'candidates'
+            candidates.mkdir()
+            for index, attempt in enumerate(result['execution']['attempts'], 1):
+                if attempt['code']:
+                    (candidates / f'attempt-{index}.py').write_text(attempt['code'] + '\n', encoding='utf-8')
+        if result['report']:
+            (destination / 'report.md').write_text(result['report']['markdown'], encoding='utf-8')
+            if result['report'].get('draft_markdown'):
+                (destination / 'draft.md').write_text(result['report']['draft_markdown'], encoding='utf-8')
+        print(json.dumps({'product': 'SAGE', 'status': result['status'], 'output': str(destination), 'scientific_validation': 'not_performed'}, indent=2))
+        return 0 if result['status'] in ('dry_run', 'completed_fixture', 'completed_development', 'attempt_budget_exhausted') else 1
+    finally:
+        for provider in models:
+            await provider.aclose()
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     # Keep the original catalog/project commands and their tests as compatibility APIs.
@@ -134,6 +208,12 @@ def main(argv=None):
     runner.add_argument('--publication-date', default=None, help='Inclusive DateOrYear or start:end window for all retrieval')
     for command in ('catalog', 'project', 'provenance'):
         sub.add_parser(command, help=f'Compatibility commands: sage {command} --help')
+    lab = sub.add_parser('laboratory', parents=[runner], add_help=False, help='Proposal, bounded code generation and evidence report')
+    lab.add_argument('--backend', choices=('dry-run', 'fixture', 'docker'), default='dry-run')
+    lab.add_argument('--allow-execution', action='store_true')
+    lab.add_argument('--contract', type=Path, help='Frozen scalar development EvaluationContract JSON')
+    lab.add_argument('--approved-contract-digest', help='SHA-256 of the reviewed canonical full contract')
+    lab.add_argument('--docker-image', help='Preinstalled image pinned by @sha256 digest')
     args = parser.parse_args(argv)
     try:
         if args.command == 'doctor':
@@ -148,7 +228,7 @@ def main(argv=None):
             raise ConfigurationError('Unknown or invalid RunConfig field') from None
         if config.request_timeout_seconds > 300:
             raise ConfigurationError('request_timeout_seconds must not exceed 300')
-        return asyncio.run(execute(args, config, load_articles(args.articles)))
+        return asyncio.run(execute_laboratory(args, config, load_articles(args.articles)) if args.command == 'laboratory' else execute(args, config, load_articles(args.articles)))
     except (SageError, OSError, ValueError) as error:
         # OSError strings may contain sensitive paths; only our safe error messages surface.
         message = str(error) if isinstance(error, SageError) else 'Local input/output operation failed'

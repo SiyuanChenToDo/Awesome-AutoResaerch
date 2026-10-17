@@ -1,15 +1,22 @@
 # SAGE 实验执行 · execution
 
-**接口位置**：[sage/execution](../../sage/execution/)。本模块仅提供 Protocol 契约，**没有实现实验 runner**。
+**实现位置**：[sage/execution](../../sage/execution/)。Agent Laboratory 的 MLESolver 代码编辑、失败反馈和候选选择机制已拆入此模块，来源与差异见[迁移对照](../../docs/agent-laboratory-migration.md)。
 
-- **预期输入**：冻结协议、批准范围、代码/数据/评分器身份、配置、种子与预算。
-- **未来输出**：真实运行记录、日志、指标和制品，参考 [run-record.json](../../templates/run-record.json) 与 [runs.jsonl](../../templates/project/runs.jsonl)。
-- **当前状态**：SAGE 只生成实验方案并保留 `execution_status: not_implemented`。没有训练、Shell 研究命令、数据集下载、GPU 调度或测量输出。
+- **输入**：研究方案、冻结评价契约、有限尝试预算及明确选择的后端。
+- **处理**：严格 EDIT/REPLACE → 生成候选 → 后端反馈 → 有界修复/改进 → 保留全部尝试与最佳有效候选。
+- **评价**：当前固定开发集标量预测 MSE；候选提交预测，标签与指标计算由控制面持有。不把候选打印的分数或模型评审当测量。
+- **输出**：代码候选、尝试与失败记录、评价状态及内容身份；不能据此宣称已完成真实科研。
 
-CoI-Agent 的 `generate_experiment()` 也是方案文本生成。模块化迁移没有把该名字升级为真实执行能力；离线 fixture 指标不应被写成真实实验记录，尚无尝试的项目账本保持为空。
+## 三类后端
 
-实现前须满足[路线图 P1](../../docs/roadmap.md)和[执行适配器契约](../../docs/architecture.md)：明确批准、隔离评分器/数据、真实计量与终止、幂等提交、失败保留、路径和网络权限测试。SAGE 当前请求预算不能代替这些要求。
+1. **dry-run（默认）**：保存候选而不执行；无运行指标，不产生科学结果。
+2. **fixture（显式启用）**：仅允许内置合成测试路径，用于验证修复、选择与报告链。它不是任意 Python 执行器，也不是研究基准。
+3. **Docker（显式启用）**：预安装固定镜像、冻结协议与明确执行授权；不自动安装或拉取镜像。此环境没有 Docker，实际容器运行和隔离尚未验证。
 
-research-loop、steer、AiiDA 等[参考工具](../../catalog/tools.md)尚未集成。autoresearch 维持用户指定的计划 `completed`，运行/集成仍为 `not_run` / `not_integrated`；Agent Laboratory 尚未导入、运行或集成。
+具体 CLI 参数和契约格式见[迁移与运行说明](../../docs/agent-laboratory-migration.md)。原 `sage run` 继续只生成 CoI 提案，不会自动调用新执行链。
 
-[上一步：实验设计](../experiment_design/README.md) · [评审与核验](../review/README.md) · [模块索引](../README.md)
+生产接入还须满足[路线图 P1](../../docs/roadmap.md)与[执行适配器目标契约](../../docs/architecture.md)：可信审批、隔离与终止验证、数据/评分器保护、恢复、真实资源计量。当前有限后端与开发指标不代表全部达标；不自动下载数据、运行原始上游程序或启动 GPU 训练。
+
+research-loop、steer、AiiDA 尚未集成。autoresearch 保持用户指定的计划 `completed`，运行/集成仍为 `not_run` / `not_integrated`。
+
+[实验设计](../experiment_design/README.md) · [评审](../review/README.md) · [模块索引](../README.md)

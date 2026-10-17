@@ -15,13 +15,13 @@ from ..review.evaluator import audit_result
 from ..experiment_design import ExperimentDesign
 
 
-async def run(topic, main_model, source, *, cheap_model=None, config=None, mode='offline', articles=None):
+async def run(topic, main_model, source, *, cheap_model=None, config=None, mode='offline', articles=None, runtime=None):
     if not isinstance(topic, str) or not topic.strip():
         raise ValueError('Topic must be a nonempty string')
     if mode not in ('offline', 'live'):
         raise ValueError('Mode must be offline or live')
     config = config or RunConfig()
-    runtime = Runtime(main_model, cheap_model or main_model, source, config)
+    runtime = runtime or Runtime(main_model, cheap_model or main_model, source, config)
     discovery = Discovery(runtime, articles=articles)
     literature = Literature(runtime, discovery)
     review = Review(runtime, discovery)

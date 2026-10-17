@@ -1,7 +1,6 @@
-"""Extension contract only. There is no manuscript writer or publication runner."""
-from typing import Protocol
+"""Bounded report drafts and deterministic execution-evidence rendering."""
+from .report import EvidenceWriter, generate_report, render_markdown, render_draft_markdown
+from .fixtures import FixtureReportModel, fixture_responses
 
-
-class EvidenceWriter(Protocol):
-    """A future writer must preserve claim/evidence links and unverified labels."""
-    async def draft(self, *, reviewed_claims: list[dict], evidence: list[dict]) -> str: ...
+__all__ = ['EvidenceWriter', 'generate_report', 'render_markdown', 'render_draft_markdown',
+           'FixtureReportModel', 'fixture_responses']

@@ -8,7 +8,9 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 
 **提供方**：offline 标准库 fixtures 和 live OpenAI/Azure、Semantic Scholar metadata adapters 使用同一控制器。live 需明确 opt-in；没有本地 article 时标为 abstract-only。原始 CoI 快照不进入运行时 import 路径。运行命令、输入和结果见[运行说明](sage-runtime.md)。
 
-**仍未实现**：execution/writing 只有 Protocol；没有训练/实验 runner、自动论文写作、独立科学评价器、可信身份审批、签名授权、并发账本锁、OS/容器沙箱、金额计量或可靠的最终测试隔离。JSON 中写 `approved` / `network: false` 不会自动实现授权或断网。结构审计通过也不能证明科学有效。
+**新增 laboratory 链**：Agent Laboratory 的代码迭代、失败修复、固定开发指标选择及报告草稿按功能接入 execution、writing 与 orchestration；默认 dry-run，fixture 仅用于软件验证，Docker 为显式选择且尚未真实容器实测。详情见[迁移对照](agent-laboratory-migration.md)。
+
+**仍未实现或未验收**：独立科学评价、可信身份审批、签名授权、并发账本锁、生产隔离验证、金额计量与可靠的最终测试隔离。JSON 中写 `approved` / `network: false` 不会自动实现授权或断网。结构审计通过也不能证明科学有效。
 
 ## 实际运行边界
 
@@ -18,7 +20,7 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 - [review](../sage/review/) 的确定性契约审计：独立于生成回答核对固定结构，无法取代真实科学评价。
 - `result.json`、`audit.jsonl`、`config.json` 是提案链产物；模板的 `runs.jsonl` 只用于真实实验尝试，不能用模型生成内容填成测量。
 
-以下执行/评价/制品契约仍是后续实现验收标准，不应因为本版本已经有文献与提案代码而被视为全部完成。
+以下完整执行/评价/制品契约仍是后续实现验收标准；当前 laboratory 的开发集 MSE 与合成 fixture 不代表完整达标。它们，不应因为本版本已经有文献与提案代码而被视为全部完成。
 
 ## 三类权威，不能混淆
 
@@ -65,7 +67,7 @@ reproducibility.md       环境、数据、制品与复核清单
 
 ## 研究适配器契约与后续验收
 
-下面描述更广泛研究闭环的目标契约。文献与模型的可调用子集以 `sage/types.py` 为准，执行/评价/制品等仍未实现。适配器只处理结构化数据，不解释外部文本中的命令；未来命令执行入口只能接受负责人审查过的代码和明确参数。
+下面描述更广泛研究闭环的目标契约。文献与模型的可调用子集以 `sage/types.py` 为准，实验迭代与报告的有限实现另见 laboratory 迁移说明，下方描述完整目标而非现有功能清单。适配器只处理结构化数据，不解释外部文本中的命令；未来命令执行入口只能接受负责人审查过的代码和明确参数。
 
 ### 1. 文献检索适配器（已有受限实现，完整目标如下）
 
@@ -73,7 +75,7 @@ reproducibility.md       环境、数据、制品与复核清单
 
 输出：来源 ID、原始链接、版本、访问时间、题录、获取状态、内容哈希、可定位片段及已读范围。片段与“研究者推断”分字段。无法获取/验证时返回原因，不生成伪引用。检索响应不得携带可直接执行的 shell 字段。
 
-### 2. 执行适配器（Protocol-only）
+### 2. 执行适配器（已有有限实现，以下为完整目标）
 
 输入：批准的计划 ID/文件哈希、run ID、父 run ID、审查过的代码提交、数据指纹、明确配置、种子、环境标识及预算配额。
 

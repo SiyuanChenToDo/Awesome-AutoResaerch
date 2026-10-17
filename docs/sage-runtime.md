@@ -1,6 +1,6 @@
 # 运行 SAGE
 
-SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研智能体）运行到**有来源范围的研究提案与实验方案**。执行实验、测量指标、自动写论文与投稿均未实现。
+SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研智能体）运行到**有来源范围的研究提案与实验方案**。原 `run` 命令保持提案模式；新增 `laboratory` 提供有界代码生成/修复、显式执行后端与证据报告，详见文末。自动投稿未实现。
 
 ## 1. 离线运行：先验证软件链路
 
@@ -31,7 +31,7 @@ offline 是默认模式，不读取 API 凭据进行外联，不需要第三方�
 - `completed` / `completed_with_uncertainty`：提案链结束；后者仍包含新颖性未知或检测到相似工作的候选，不是实验成功。
 - `stopped`：证据不足或预算耗尽等已识别停止条件；`failed` 表示提供方、解析或契约异常。检查 `errors`、`audit` 及已有的部分产物。
 - `ExperimentPlan.status: proposal_only`：方案未执行。
-- `execution_status: not_implemented`、`writing_status: not_implemented`：接口存在，runner 未实现。
+- `execution_status: not_implemented`、`writing_status: not_implemented`：原 `run` 提案结果保留的兼容字段；仅表示该提案链不执行实验或写作，新增 `laboratory` 另有 `execution` / `report` 状态。
 - `scientific_validation: not_performed`：没有完成科学有效性评价。
 - `validation`：确定性输出契约检查；不是引用真实性、论文结论或实验效果认证。
 
@@ -151,3 +151,14 @@ python scripts/coi.py prepare --destination projects/coi-agent-runtime
 ```
 
 项目模板初始化不调用模型；旧 prepare 不安装或运行上游，且不属于 SAGE 主运行路径。来源与偏离见[迁移说明](sage-migration.md)，科研人工门禁见[工作流](workflow.md)。
+
+
+## Agent Laboratory 扩展入口
+
+`python -m sage laboratory --mode offline --output projects/lab-dry` 串联原有提案链、候选代码生成与证据报告，默认只检查语法，不执行代码。
+
+`python -m sage laboratory --mode offline --backend fixture --allow-execution --output projects/lab-fixture` 使用固定合成样例，展示候选改进、固定评分和报告链。它只分派精确匹配的已审阅样例函数，不运行任意模型代码。
+
+真实执行提供显式 Docker backend，需要本地已安装引擎、已审核且以 digest 固定的预装镜像、冻结 contract 文件及匹配的 `--approved-contract-digest`。当前仅支持标量预测的 development MSE，目标标签不发送给模型/容器。本次未实测 Docker 或 live 服务，不宣称安全沙箱或科研效果。完整参数、契约格式、源函数映射与限制见 [Agent Laboratory 迁移指南](agent-laboratory-migration.md)。
+
+原 `run` 产物中的 `execution_status: not_implemented` / `writing_status: not_implemented` 保留为兼容字段，含义仅限该提案运行；新能力位于 `sage.laboratory.v1` 外层 `execution` 和 `report` 字段。不得用兼容字段或模型评审评分推断科研成功。

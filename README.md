@@ -19,9 +19,9 @@
 
 ---
 
-**Scientific Agent for Grounded Exploration** 是一个逐步建设中的模块化科研提案工作流。核心代码与提示词位于 [sage/](sage/)，来自对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 的功能拆分与改造。离线与联网模式使用同一控制器，通过可替换的模型和文献提供方运行。
+**Scientific Agent for Grounded Exploration** 是一个逐步建设中的模块化科研提案工作流。核心代码与提示词位于 [sage/](sage/)，来自对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。离线与联网模式使用同一控制器，通过可替换的模型和文献提供方运行。
 
-**当前状态**：提案链已实现并通过离线验证；live 适配器已实现、尚未真实联网实测；实验执行与论文写作仅有接口。生成的想法、方案和模型评分均需研究者复核，不能视作科学结果。
+**当前状态**：提案链已实现并通过离线验证；live 适配器尚未真实联网实测；Agent Laboratory 衍生的代码迭代与报告链见下方独立入口，默认不执行生成代码。生成的想法、方案和模型评分均需研究者复核，不能视作科学结果。
 
 <a id="capabilities"></a>
 ## 从一个问题，到一份可追溯的提案
@@ -40,7 +40,8 @@
 | **比较与评审** | 检索范围内的新颖性筛查、六维两两比较、文献建议与方案评审 | [review](sage/review/) |
 | **设计方案** | 实验方案、补充检索与证据支持的修订；保留修订历史 | [experiment_design](sage/experiment_design/) |
 | **组织流程** | 类型契约、统一调用与时间预算、审计记录、结构检查与错误保留 | [orchestration](sage/orchestration/) |
-| **后续扩展** | 执行与写作的 Protocol 接口，尚无 runner | [execution](sage/execution/) · [writing](sage/writing/) |
+| **代码与实验迭代** | Agent Laboratory 衍生的 EDIT/REPLACE、失败修复、候选保留与尝试记录；执行必须显式选择后端 | [execution](sage/execution/) |
+| **报告草稿** | 按节写作、评审与修订，保留来源、运行状态和未验证标签 | [writing](sage/writing/) |
 
 ### 三个始终可见的边界
 
@@ -101,11 +102,37 @@ SAGE 保留了 CoI 的核心研究提案方法，并拆为可以独立维护的�
 | **有搜索代码吗？** | 有。包括 Semantic Scholar 查询、查询改写、引用关系、日期过滤、去重及可选 embedding 重排；未配置 embedding 时使用词项匹配。 |
 | **有完整研究逻辑吗？** | 查询 → 文献链 → 提取 → 构思 → 判新/再生成 → 比较 → 方案/评审修订已实现并离线验证。 |
 | **有哪些有意差异？** | 命名契约替代位置元组；循环与调用有上限；未知新颖性不再误判通过；默认全文下载/解析路径未迁移。 |
-| **已经复现原论文效果吗？** | 尚未运行原始上游流程，也未实测 live 或复现科研指标。实验执行、自动论文写作和投稿均未实现。 |
+| **已经复现原论文效果吗？** | 尚未运行原始上游流程，也未实测 live 或复现科研指标。新 laboratory 链另有代码迭代与报告草稿；原版科研效果、真实服务质量和自动投稿均未验证或提供。 |
 
 提示词入口：[检索](sage/discovery/prompts.py) · [文献](sage/literature/prompts.py) · [构思](sage/ideation/prompts.py) · [方案](sage/experiment_design/prompts.py) · [评审](sage/review/prompts.py)
 
 逐项方法、19 个函数和行为差异见 **[CoI → SAGE 迁移对照](docs/sage-migration.md)**。其中 `get_judge_experiment_all_prompt` 为可扩展的方案比较模板，默认主链实际比较候选想法。六维投票不宣称与上游行为或效果等价。
+
+<a id="laboratory"></a>
+## 接入 Agent Laboratory：从方案到代码与报告
+
+CoI 提案链继续负责文献与研究方案；Agent Laboratory 的方法被拆入现有功能模块，负责下一段流程：
+
+```text
+研究方案 → 代码候选 → 执行反馈/明确未执行 → 有界修复与改进 → 保留候选与失败 → 分节报告 → 评审修订
+```
+
+- **代码编辑与修复**：迁移 MLESolver 的 EDIT/REPLACE 操作、尝试历史与最佳候选机制；循环有预算，失败不会被删除。
+- **结果与评价分开**：模型意见不当作测量指标；离线合成 fixtures 只验证软件行为。真正的任务指标需要固定评价契约和获准的执行后端。
+- **报告写作**：借鉴 PaperSolver 的章节化草稿与评审修订；未执行方案、软件测试和真实实验分别标注，不凭模型回答补造结果。
+- **来源可查**：MIT 原始来源与修改说明保留；运行时不导入上游大脚本。此次是机制级拆分，未承诺复制原版全部功能或复现论文成绩。
+
+```bash
+# 提案 → 代码候选 → 报告草稿；不执行生成代码
+python -m sage laboratory --mode offline --output projects/sage-lab-dry
+
+# 仅允许内置的合成 fixture，验证修复、固定评价与报告链
+python -m sage laboratory --mode offline --backend fixture --allow-execution --output projects/sage-lab-fixture
+```
+
+真实候选执行另需显式 Docker 后端、预安装固定镜像和冻结协议；本次未在 Docker 中做真实运行验证。当前内置评价契约为开发集标量预测 MSE，不能直接当成任意 AI 研究任务的完整评价器。
+
+使用方法、默认 dry-run、执行后端要求和逐项迁移范围见[Agent Laboratory 迁移与运行说明](docs/agent-laboratory-migration.md)。原 `sage run` 仍是提案入口，不会因接入新模块自动开始实验。
 
 ## 慢慢建设，先把每一步做实
 
@@ -113,9 +140,9 @@ SAGE 保留了 CoI 的核心研究提案方法，并拆为可以独立维护的�
 |---|---|
 | **基础与提案链** | 已提供：模块化代码、提示词、离线控制器、项目模板和来源记录 |
 | **真实服务验证** | 待做：在明确授权与预算下验证 live 接通、失败行为、来源质量和实际费用 |
-| **更多方法接入** | Agent Laboratory 为后续研究重点，尚未导入、运行或集成 |
-| **受限实验执行** | 待实现：批准计划身份、执行隔离、真实资源限额、失败保留和恢复 |
-| **独立评价与写作** | 待实现：独立评价、可重建证据与结果驱动写作；以分阶段验收为准 |
+| **更多方法接入** | Agent Laboratory 的代码迭代与报告机制已分模块接入；原始项目未独立运行 |
+| **受限实验执行** | 已有有界尝试与显式后端入口；生产隔离、可信审批、任务恢复仍需单独验收 |
+| **独立评价与写作** | 报告草稿链已接入；独立科学评价、完整证据重建与真实研究质量仍待验证 |
 
 [完整路线图](docs/roadmap.md)按验收条件推进，不承诺日期。karpathy/autoresearch 的计划任务按用户要求标为 `completed`，不再进入复现优先队列；其运行仍是 `not_run`，集成仍是 `not_integrated`。
 
@@ -147,7 +174,7 @@ python -m sage project check-project projects/my-first-study
 sage/                     自有运行包、分模块提示词、提供方与契约
 assets/                   原创 SVG 标志与 README 横幅
 modules/                  功能文档与旧 CoI 归档准备器
-third_party/coi_agent/     不可变上游快照、许可与来源清单
+third_party/              CoI-Agent 与 Agent Laboratory 的来源快照、许可与清单
 catalog/ · sources/       可检索目录、独立核验记录与原始资料
 docs/                     运行、迁移、工作流、架构与路线图
 templates/ · examples/    项目模板与明确标注未执行的计划示例
@@ -162,6 +189,8 @@ projects/                 默认不入 Git 的本地研究产物
 ## 来源与许可
 
 SAGE 的方法与派生提示词来自 [DAMO-NLP-SG/CoI-Agent](https://github.com/DAMO-NLP-SG/CoI-Agent)，对应论文 [Chain of Ideas](https://arxiv.org/abs/2410.13185)。固定来源、原始文件哈希、Apache-2.0 许可和修改说明均保留，见 [CoI 归档](third_party/coi_agent/README.md)、[NOTICE](NOTICE.md)与[许可说明](LICENSE-NOTICE.md)。上游名称和引用不因 SAGE 品牌而改写，也不表示上游背书。
+
+Agent Laboratory 派生部分使用其 MIT 来源，版权归属与修改范围见 [Agent Laboratory 迁移说明](docs/agent-laboratory-migration.md)和 [NOTICE](NOTICE.md)。两个上游的许可证分别适用，不将 MIT 部分写成 Apache-2.0。
 
 **本仓库尚未为全部原创部分指定统一开源许可证。** 第三方许可适用于对应部分；公开可见不自动授予全部内容的任意使用权。
 

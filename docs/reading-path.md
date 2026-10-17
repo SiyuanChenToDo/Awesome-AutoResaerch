@@ -4,7 +4,7 @@
 
 ## 当前重点与已完成任务
 
-SAGE 已将 **CoI-Agent**（[Chain of Ideas 论文](https://arxiv.org/abs/2410.13185)）的核心提案链与提示词按功能拆分，先读[源方法与模块对照](sage-migration.md)，再看每个模块的实际实现及离线边界。[Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory)仍为后续研究重点，尚未导入或集成。具体验收见[当前项目计划](roadmap.md#当前项目计划2026-10-17)。本页不将尚未检查的代码能力写成事实。
+SAGE 已将 **CoI-Agent**（[Chain of Ideas 论文](https://arxiv.org/abs/2410.13185)）的核心提案链与提示词按功能拆分，先读[源方法与模块对照](sage-migration.md)，再看每个模块的实际实现及离线边界。[Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的代码迭代与报告机制也已拆入 SAGE，见[迁移对照](agent-laboratory-migration.md)；原始项目未独立运行，真实科研效果未验证。具体验收见[当前项目计划](roadmap.md#当前项目计划2026-10-17)。本页不将尚未检查的代码能力写成事实。
 
 [karpathy/autoresearch](https://github.com/karpathy/autoresearch) 已按用户要求标为 `task_status: completed`，不再进入后续复现优先队列。固定训练预算、窄代码修改面、保留/丢弃记录仍作为历史借鉴；全成本与硬件可比性的核验边界保留。计划完成不代表独立复现，运行核验仍为 `not_run`，SAGE 集成仍为 `not_integrated`。
 

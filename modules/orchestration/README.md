@@ -15,9 +15,9 @@ python -m sage run --mode offline --topic "证据约束的研究构思" --output
 - 限定查询改写、候选/链长度、新颖性再生成、评审轮数和重试次数。
 - 所有提供方调用经过统一计数、单次超时和总墙钟预算；失败/重试也消耗额度。最大输出 token 预留不是实际计费金额。
 - 严格解析阶段输出，保留错误、调用审计与不完整状态，不把格式失败标成研究成功。
-- 将提案、软件契约检查与未实现的 execution/writing、未进行的 scientific validation 分别标记。
+- 原 `sage run` 保持提案语义；新 `sage laboratory` 显式连接代码迭代与报告链，分别记录执行与评价状态，不升级 scientific validation。
 
-操作系统隔离、独立最终测试、可信身份审批、真实实验调度和金额结算仍未实现。详见[架构](../../docs/architecture.md)和[运行说明](../../docs/sage-runtime.md)。
+独立最终测试、可信身份审批、生产级调度和金额结算仍未实现。新增 Docker 适配器尚未真实容器实测，不据此宣称隔离已验证。详见[架构](../../docs/architecture.md)和[运行说明](../../docs/sage-runtime.md)。
 
 ## 旧 CoI 归档准备路径
 
