@@ -23,7 +23,10 @@ def main():
     from coral.config import GraderConfig
     from coral.grader.subprocess_grader import SubprocessGrader
     from coral.types import Task
-    config=GraderConfig(entrypoint='coral_simplifier_grader:Grader',timeout=payload['timeout'],
+    entrypoint=payload.get('entrypoint','coral_simplifier_grader:Grader')
+    if entrypoint not in ('coral_simplifier_grader:Grader','coral_research_grader:Grader'):
+        raise ValueError('Unreviewed grader entrypoint')
+    config=GraderConfig(entrypoint=entrypoint,timeout=payload['timeout'],
         direction='maximize',args=payload['args'])
     grader=SubprocessGrader(config.entrypoint,Path(sys.executable),config,payload['private_dir'])
     bundle=asyncio.run(grader.grade(payload['codebase_path'],[Task(payload['task_id'],payload['task_id'],

@@ -125,9 +125,20 @@ class Discussion:
         if len(candidates) != count:
             raise NoEvidence('Hybrid discussion requires the configured number of distinct student chains')
         portfolios = [{e.paper.paper_id for e in c.chain.evidence} for c in candidates]
-        if any(not (p - set().union(*(q for j, q in enumerate(portfolios) if j != i))) for i, p in enumerate(portfolios)):
-            raise NoEvidence('Each hybrid student needs at least one exclusive source; duplicated portfolios are insufficient')
         shared = self.runtime.config.discussion_prompt_version == 'v3'
+        if any(not p for p in portfolios):
+            raise NoEvidence('Each discussion role needs at least one read source')
+        exclusive = [p - set().union(*(q for j, q in enumerate(portfolios) if j != i)) for i, p in enumerate(portfolios)]
+        if not shared and any(not p for p in exclusive):
+            raise NoEvidence('Each hybrid student needs at least one exclusive source; duplicated portfolios are insufficient')
+        # Shared v3 roles are perspectives over a common evidence library. Do
+        # not manufacture source diversity or mistake overlapping papers for
+        # independent corroboration. v1/v2 keep their original ownership rule.
+        if shared:
+            self.ledger['source_diversity'] = {'portfolios_distinct':len({frozenset(p) for p in portfolios})==len(portfolios),
+                'exclusive_source_counts':[len(p) for p in exclusive],
+                'independence':'not_established_shared_model_roles_and_potentially_shared_sources'}
+            self.runtime.event('discussion.evidence','shared_portfolios',**self.ledger['source_diversity'])
         evidence_library = {e.paper.paper_id: e for c in candidates for e in c.chain.evidence}
         if shared:
             evidence_library.update(getattr(self.runtime, 'evidence_cards', {}))

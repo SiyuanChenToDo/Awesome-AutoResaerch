@@ -220,6 +220,24 @@ def render_markdown(report):
             lines.append(f'  Source identifier: {_text(reference["url"])}')
     if not report['references']:
         lines.append('No supplied proposal references; literature support remains unavailable.')
+    analysis=report.get('research_analysis')
+    if isinstance(analysis,dict) and analysis.get('schema_version')=='sage.sr_analysis.v1':
+        lines += ['', '## Bounded heldout experiment', '',
+                  'Owned analytic functions and an owned LSH proxy; this is not a reproduction of the cited implementations.',
+                  'Numbers below are recomputed from the frozen confirmation ledger. Seed intervals do not cover arbitrary new tasks.', '',
+                  '| Arm | Mean test R2 | Mean OOD R2 | Mean nodes | Accepted | Heldout semantic violations |',
+                  '|---|---:|---:|---:|---:|---:|']
+        for arm,row in analysis['summaries'].items():
+            lines.append(f'| {_text(arm)} | {row["test_r2"]:.6f} | {row["ood_r2"]:.6f} | {row["final_size"]:.3f} | {row["accepted"]} | {row["heldout_semantic_violations"]} |')
+        lines += ['', 'Primary hypothesis status: '+_text(analysis['primary_claim_status'])+'.', '',
+                  '| Probe verified minus control | Mean test R2 difference | Seed bootstrap 95% interval | Holm p |',
+                  '|---|---:|---|---:|']
+        for row in analysis['contrasts']:
+            lines.append(f'| {_text(row["control"])} | {row["mean_delta_test_r2"]:.6f} | [{row["ci95"][0]:.6f}, {row["ci95"][1]:.6f}] | {row["holm_p"]:.6f} |')
+        lines += ['', 'Complexity matching criteria all met: '+str(analysis['all_complexity_matches_met'])+'.',
+                  'The fixed penalty ladder does not guarantee a matched-complexity comparison. See analysis.json for per-function distances.',
+                  'Extra hashing/probe cost is recorded; equal fitness-call counts do not imply equal total compute.',
+                  'Independent scientific replication: not performed.']
     if report['errors'] or report['evidence_warnings']:
         lines += ['', 'Some writing or input checks did not complete cleanly; consult the structured error and evidence-warning records.']
     return '\n'.join(lines) + '\n'
@@ -325,6 +343,8 @@ async def generate_report(runtime, proposal: dict, execution: dict, *, on_progre
               'rendering_policy': 'deterministic_evidence_only_model_prose_quarantined',
               'source_methods': ['PaperSolver.gen_initial_report', 'PaperSolver.system_prompt',
                                  'PaperSolver.solve', 'PaperSolver.process_command', 'agents.get_score']}
+    if execution.get('research_analysis') is not None:
+        report['research_analysis']=deepcopy(execution['research_analysis'])
     report['sections'] = [{'section_id': name, 'title': TITLES[name], 'commentary': '',
                            'citation_ids': [], 'claim_status': 'unverified_model_commentary',
                            'rendered_in_markdown': False, 'status': 'not_generated'} for name in SECTIONS]
@@ -334,6 +354,8 @@ async def generate_report(runtime, proposal: dict, execution: dict, *, on_progre
                'execution_status': report['execution_status'], 'observations': observations,
                'fixture': report['fixture'], 'dry_run': dry_run,
                'scientific_validation': 'not_performed'}
+    if 'research_analysis' in report:
+        context['research_analysis']=report['research_analysis']
     stage = 'writing.scaffold'
     try:
         def validate_scaffold(values):

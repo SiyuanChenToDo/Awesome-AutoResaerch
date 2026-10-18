@@ -21,7 +21,7 @@
 
 **Scientific Agent for Grounded Exploration** 是一个逐步建设中的模块化科研提案工作流。核心代码与提示词位于 [sage/](sage/)，来自对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。离线与联网模式使用同一控制器，通过可替换的模型和文献提供方运行。
 
-**当前状态**：提案链已通过真实 DeepSeek + arXiv 服务验证，389 项离线测试通过。新版证据提炼、共享讨论与方案交接已通过一次保留来源/候选的续跑；ARIS/CORAL 增量已用固定真实论文语料完成从零模型流程与受限评分执行，见[本轮验证](docs/aris-coral-validation-20261018.md)。Agent Laboratory 衍生的代码迭代与报告链默认不执行生成代码，真实科研实验尚未完成。详见[验证范围](docs/validation-20261018.md)。
+**当前状态**：397 项离线测试通过。新增 `sage closed-loop` 已用真实 DeepSeek、固定真实论文语料、共享讨论、原版 ARIS 门控和原生 CORAL 训练评价完成一次有界实验闭环：两轮开发、一次新种子确认、统计、写作与保存后反算核对。它验证固定符号回归子实验的工程连接，不代表完整生成方案、论文规模实验或科学有效性已经完成。见[闭环入口](docs/closed-loop-runtime.md)与[闭环验证范围](docs/closed-loop-validation-20261018.md)。较早的[提案验证](docs/validation-20261018.md)和[接入验证](docs/aris-coral-validation-20261018.md)保留历史边界。
 
 <a id="capabilities"></a>
 ## 从一个问题，到一份可追溯的提案
@@ -157,7 +157,7 @@ python -m sage laboratory --mode offline --discussion-mode hybrid --backend fixt
 
 详见[讨论机制与参数](docs/coi-laboratory-discussion.md)与[验证记录](docs/hybrid-validation.md)。离线测试检查数据传递、来源归属和预算；不能据此断言讨论提高科研质量。
 
-ARIS 的多视角构思、逐主张查新和评审收据已接入 research 提案路径；可显式调用固定原版评审门控。另有真正调用 CORAL SubprocessGrader 的独立任务入口，目前限于审查过的合成表达式简化验证，未接入编码代理池或通用科研训练。[运行入口与边界](docs/aris-coral-runtime.md) · [整体整合设计](docs/aris-coral-integration.md)
+ARIS 的多视角构思、逐主张查新和评审收据已接入 research 提案路径，可调用固定原版评审门控。CORAL 原生 SubprocessGrader 支持受审查的表达式小测试，以及 `closed-loop` 的固定 GP 训练与留出评价。编码代理池、通用科研代码生成执行和独立科学复核尚未接入。[运行入口与边界](docs/aris-coral-runtime.md) · [整体整合设计](docs/aris-coral-integration.md)
 
 ## 慢慢建设，先把每一步做实
 

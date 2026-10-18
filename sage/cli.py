@@ -253,6 +253,49 @@ async def execute_laboratory(args, config, articles):
             await provider.aclose()
 
 
+async def execute_closed_loop(args, config):
+    from .execution.research import validate_protocol
+    from .checkpoints import Checkpoint, identity, digest
+    from .runtime import Runtime
+    from .providers import OpenAIModel
+    from .recorded import RecordedPaperSource
+    from .integrations.aris import reviewer_from_env, ArisGate
+    from .orchestration.closed_loop import run_closed_loop
+    contract=validate_protocol(load_json(args.protocol))
+    if not args.allow_live or not args.allow_execution or args.approved_protocol_digest!=digest(contract):
+        raise ConfigurationError('Closed loop requires live and execution opt-in with the exact frozen protocol digest')
+    if not config.claim_review or config.discussion_mode!='hybrid' or not os.environ.get('SAGE_ARIS_ROOT'):
+        raise ConfigurationError('Closed loop requires claim review, hybrid discussion and the pinned ARIS root')
+    for path in (args.coral_python,args.candidate_python):
+        if not path.is_absolute() or not path.is_file():
+            raise ConfigurationError('Research runtime interpreter is unavailable')
+    # Fresh-output only: never implicitly repeat confirmation after a crash.
+    destination=output_directory(args.output)
+    atomic_json(destination/'config.json',config.to_dict())
+    model=OpenAIModel.from_env(role='main',timeout=config.request_timeout_seconds)
+    cheap=OpenAIModel.from_env(role='cheap',timeout=config.request_timeout_seconds)
+    reviewer=reviewer_from_env(timeout=config.request_timeout_seconds)
+    source=RecordedPaperSource(args.paper_corpus)
+    gate=ArisGate(os.environ['SAGE_ARIS_ROOT']) if os.environ.get('SAGE_ARIS_ROOT') else None
+    checkpoint=Checkpoint(destination/'checkpoint.json',
+        {**identity(args.topic,'live',config,None,model,cheap,source,reviewer),
+         'workflow':'closed_loop','protocol_digest':digest(contract)})
+    runtime=Runtime(model,cheap,source,config,checkpoint=checkpoint,reviewer_model=reviewer,aris_gate=gate,
+                    retain_rejected_responses=True)
+    runtime.event('retrieval.scope','recorded_corpus',corpus_sha256=source.corpus_sha256,
+                  fresh_network_search=False,provenance=source.provenance)
+    try:
+        value=await run_closed_loop(args.topic,runtime,contract=contract,destination=destination,
+            coral_python=args.coral_python,candidate_python=args.candidate_python,
+            allow_execution=args.allow_execution,approved_protocol_digest=args.approved_protocol_digest)
+        print(json.dumps({'status':value['status'],'output':str(destination),'usage':value['usage'],
+                          'closure_checks':value.get('closure_checks'),'errors':value['errors']},ensure_ascii=False,indent=2))
+        return 0 if value['status']=='completed_closed_loop' else 1
+    finally:
+        for provider in (model,cheap,reviewer):
+            if provider is not None: await provider.aclose()
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     # Keep the original catalog/project commands and their tests as compatibility APIs.
@@ -299,6 +342,17 @@ def main(argv=None):
     lab.add_argument('--contract', type=Path, help='Frozen scalar development EvaluationContract JSON')
     lab.add_argument('--approved-contract-digest', help='SHA-256 of the reviewed canonical full contract')
     lab.add_argument('--docker-image', help='Preinstalled image pinned by @sha256 digest')
+    closed=sub.add_parser('closed-loop',help='Grounded proposal, two policy iterations, native CORAL GP training, holdout and report')
+    closed.add_argument('--topic',required=True)
+    closed.add_argument('--output',type=Path,required=True)
+    closed.add_argument('--config',type=Path)
+    closed.add_argument('--protocol',type=Path,required=True)
+    closed.add_argument('--paper-corpus',type=Path,required=True)
+    closed.add_argument('--coral-python',type=Path,required=True)
+    closed.add_argument('--candidate-python',type=Path,required=True)
+    closed.add_argument('--allow-live',action='store_true')
+    closed.add_argument('--allow-execution',action='store_true')
+    closed.add_argument('--approved-protocol-digest',required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == 'doctor':
@@ -315,6 +369,12 @@ def main(argv=None):
                 'attempts':len(result['attempts']),'selected_attempt_id':result['selected_attempt_id'],
                 'usage':result['usage'],'scientific_validation':'not_performed'},indent=2))
             return 0 if result['status']=='completed_development' else 1
+        if args.command == 'closed-loop':
+            from .config import profile_overrides
+            overrides=profile_overrides('research');overrides.update(load_json(args.config) if args.config else {})
+            try: config=RunConfig(**overrides)
+            except TypeError: raise ConfigurationError('Unknown or invalid RunConfig field') from None
+            return asyncio.run(execute_closed_loop(args,config))
         from .config import profile_overrides
         overrides = profile_overrides(args.profile)
         overrides.update(load_json(args.config) if args.config else {})

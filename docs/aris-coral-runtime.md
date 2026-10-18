@@ -1,5 +1,7 @@
 # ARIS / CORAL 实际接入入口
 
+新增 [可执行科研闭环](closed-loop-runtime.md)：连接真实提案、共享讨论、两轮开发反馈、原生 CORAL GP 训练、一次留出评价、统计和报告；下述 `coral-evaluate` 小测试入口继续保留。
+
 这是可运行的增量实现，范围小于[整体整合方案](aris-coral-integration.md)。不安装上游 skills、不启动自动发布；上游源码与依赖单独安装。
 
 ## ARIS 方法与原版门控
