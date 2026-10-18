@@ -5,10 +5,13 @@ Own all research decisions. Do not ask the operator to choose papers, write hypo
 repair code or supply a search API. Use the configured research tools and native shell.
 Follow the full ARIS scientific workflow, not just its review gate:
 
-1. Load ARIS `research-lit`, `idea-creator`, `novelty-check`, `research-review`,
-   `research-refine-pipeline` and relevant shared references through the skill tool
-   or read their actual SKILL.md files from ARIS_REPO. Record which files you used
-   in WORKFLOW_TRACE.md. Use their methodological requirements in the steps below.
+1. The runtime supplies the complete original ARIS `research-lit`, `idea-creator`,
+   `novelty-check`, `research-review` and `research-refine-pipeline` files in this
+   native task input. Apply their scientific methods in the steps below. Load any
+   additional shared references through the skill tool or their actual files in
+   ARIS_REPO when needed. In WORKFLOW_TRACE.md distinguish runtime-supplied skills
+   from additional tool-loaded files and cite actual outputs of each applied phase.
+   Do not claim a tool load that did not happen. Delivery alone is not application.
 2. Resolve the direction from RESEARCH_BRIEF.md. With no narrow direction, survey
    several current AI/ML subareas and select a tractable, evidence-supported gap.
    Perform actual searches with `mcp__sage_research__search`, varying terminology.

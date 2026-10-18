@@ -59,10 +59,13 @@ class SourceSpanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder); service = ResearchService(root/'private', root, 'topic')
             archive = {'paper':{'paper_id':'paper-1'},'source_sha256':'bound-source',
-                'source_scope':'supplied_article', 'chunks':[{'chunk_id':'C1','heading':'Methods','text':'Exact original method.'}]}
+                'source_scope':'supplied_article', 'chunks':[{'chunk_id':'C1','heading':'Methods','text':'Exact original method.'},
+                    {'chunk_id':'C2','heading':'Conditions','text':'Exact original conditions.'}]}
             service.archive_source(archive)
             self.assertEqual(service.passages('paper-1')['outline'][0]['chunk_id'], 'C1')
             self.assertEqual(service.passages('paper-1',['C1'])['chunks'][0]['text'], 'Exact original method.')
+            service.passages('paper-1',['C2'])
+            self.assertEqual([c['chunk_id'] for c in service.read_passages['paper-1']], ['C1','C2'])
             with self.assertRaises(ValueError): service.passages('paper-1',['invented'])
             with self.assertRaises(ValueError): service.passages('unknown',['C1'])
 

@@ -18,6 +18,7 @@ import time
 from ..artifacts import atomic_json, atomic_text
 from ..errors import ConfigurationError
 from .service import ResearchService, serve, serve_grader, now
+from .skills import assemble_native_task
 
 ARIS_COMMIT = '15c0b799e6cd5fbc4da381a5786dd0bc2cdf15ee'
 CORAL_COMMIT = '0123dfb939b35228cf2c1fde224cd0561e727408'
@@ -58,6 +59,17 @@ def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max
     seed = destination / 'seed'
     seed.mkdir()
     workflow = (Path(__file__).parent / 'workflow.md').read_text(encoding='utf-8')
+    native_task, skill_receipt = assemble_native_task(aris_root, workflow)
+    # DSH's shipped 64-KiB workspace-instruction budget would cut these original
+    # methods and the following task in the middle. Reserve room for CORAL's
+    # wrapper and parent instructions; retain the full original source files.
+    instruction_budget = max(262144, len(native_task.encode('utf-8')) + 65536)
+    skill_receipt['instruction_context_budget_bytes'] = instruction_budget
+    atomic_json(destination / 'aris-inputs.json', skill_receipt)
+    # Keep literal shell ${...} examples out of OmegaConf. CORAL repeatedly
+    # serializes its task config; DSH natively loads this paired instruction file
+    # alongside the AGENTS.md that CORAL generates, without config interpolation.
+    atomic_text(seed / 'AGENTS.local.md', native_task)
     atomic_text(seed / 'RESEARCH_BRIEF.md', f'# Research direction\n\n{topic}\n\n' + workflow)
     atomic_text(seed / '.gitignore', '.dsh/\n__pycache__/\n.venv/\n')
     command(['git', 'init', '-q', seed])
@@ -73,7 +85,9 @@ def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max
     patch = destination / 'research.patch.yml'
     # API credentials remain inherited environment references. Neither provider
     # keys nor the transient research-service token appear in saved config.
-    atomic_text(patch, '- insert:\n'
+    atomic_text(patch, f'- id: agent-instructions\n  config:\n    maxBytes: {instruction_budget}\n'
+        '    maxSourceBytes: 1048576\n'
+        '- insert:\n'
         '    - id: sage-aris-skills\n      name: "@deepseek-ai/dsh-skill-filesystem"\n      config:\n'
         '        providerName: aris\n        includeDefaultRoots: false\n        watch: false\n'
         f'        bundledSkillDir: {json.dumps(str(aris_root / "skills"))}\n'
@@ -89,7 +103,7 @@ def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max
                        'tips': 'Read RESEARCH_BRIEF.md; all research decisions belong to the agent.'},
         'grader': {'entrypoint': 'sage_conjecture_grader:Grader', 'setup': [f'uv pip install --no-deps {shlex.quote(str(grader))}'],
                    'timeout': 600, 'direction': 'maximize'},
-        'agents': {'count': 1, 'runtime': 'dsh', 'model': os.environ.get('SAGE_MAIN_MODEL', 'deepseek-v4-pro'),
+        'agents': {'count': 1, 'runtime': 'dsh', 'model': os.environ.get('SAGE_MAIN_MODEL', 'deepseek-flash'),
             # DSH streams progress to stderr, while CORAL's stdout-only stall
             # clock falsely restarts a working headless session. The outer
             # wall deadline still bounds the entire run; crash recovery stays on.
@@ -116,7 +130,7 @@ def run(args, destination):
     os.environ.setdefault('SAGE_MODEL_PROVIDER', 'deepseek')
     os.environ.setdefault('SAGE_OPENAI_API_KEY', key)
     os.environ.setdefault('SAGE_OPENAI_BASE_URL', 'https://api.deepseek.com')
-    os.environ.setdefault('SAGE_MAIN_MODEL', 'deepseek-v4-pro')
+    os.environ.setdefault('SAGE_MAIN_MODEL', 'deepseek-flash')
     os.environ.setdefault('SAGE_CHEAP_MODEL', os.environ['SAGE_MAIN_MODEL'])
     if os.environ['SAGE_MODEL_PROVIDER'] != 'deepseek':
         raise ConfigurationError('This native DSH adapter currently supports the DeepSeek provider')
@@ -170,6 +184,16 @@ def run(args, destination):
     atomic_json(destination / 'launch.json', manifest)
     prepare(destination, topic=topic, aris_root=aris_root, coral_python=coral_python,
             dsh=dsh, agent_user=args.agent_user, max_attempts=args.max_attempts)
+    resolved = json.loads(command([coral_python, '-c',
+        'import hashlib,json,sys;from coral.config import CoralConfig;'
+        'c=CoralConfig.from_yaml(sys.argv[1]);c.to_yaml(sys.argv[2]);'
+        'c=CoralConfig.from_yaml(sys.argv[2]);'
+        'print(json.dumps({"resolved_task_sha256":hashlib.sha256(c.task.description.encode()).hexdigest()}))',
+        destination / 'task.yaml', destination / 'native-config-resolved.yaml']))
+    expected = json.loads((destination / 'aris-inputs.json').read_text(encoding='utf-8'))['coral_task_sha256']
+    if resolved['resolved_task_sha256'] != expected:
+        raise ConfigurationError('Native CORAL config did not preserve the complete original ARIS task input')
+    atomic_json(destination / 'native-config-preflight.json', resolved)
     probe = command([coral_python, '-c',
         'import json,os,sys;from pathlib import Path;'
         'assert os.geteuid()!=0;assert not os.getgroups();'
@@ -254,6 +278,7 @@ def run(args, destination):
         'framework_unchanged_during_run': unchanged,
         'workflow_status': 'completed_autonomous_conjectures' if complete else 'incomplete',
         'graded_attempts': len(service.grades), 'selected_grade': best,
+        'aris_skill_inputs': json.loads((destination / 'aris-inputs.json').read_text(encoding='utf-8')),
         'model_review_status': ('high_priority_issues_open' if selected_review and
             any(x.get('severity') == 'high' for x in selected_review['review']['issues']) else 'model_review_only'),
         'scientific_validation': 'not_performed', 'independent_acceptance': False,

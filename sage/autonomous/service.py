@@ -199,7 +199,11 @@ class ResearchService:
             any(not isinstance(x, str) or x not in chunks for x in chunk_ids)):
             raise ValueError('Select at most four actual chunk IDs from the paper outline')
         selected = [chunks[x] for x in dict.fromkeys(chunk_ids)]
-        self.read_passages[paper_id] = selected
+        # A later targeted lookup must not erase the original passages already
+        # read for this paper from a subsequent fresh-context review.
+        previously_read = {c['chunk_id']: c for c in self.read_passages.get(paper_id, [])}
+        previously_read.update({c['chunk_id']: c for c in selected})
+        self.read_passages[paper_id] = list(previously_read.values())
         self.event('original_passages_read', paper_id=paper_id, chunk_ids=chunk_ids,
                    source_sha256=archive['source_sha256'])
         self.save()

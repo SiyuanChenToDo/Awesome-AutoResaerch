@@ -9,7 +9,7 @@
 | 组件 | 实际接入 | 职责 |
 |---|---|---|
 | CORAL | 原版 `AgentManager`、DeepSeek Harness runtime、grader daemon、独立提交 checkout、attempt、heartbeat | 启动持续代理，保存与评分尝试，反馈后继续探索，按预算停止 |
-| ARIS | 固定源码中的完整技能目录，经 DSH 原生 skill-filesystem 挂载；提供 research-lit、idea-creator、novelty-check、research-review、research-refine-pipeline 等技能，实际加载以原生日志为准 | 调研、8–12 个不同候选、近似工作比较、批评、修订及 Research Wiki |
+| ARIS | 上述五项核心技能的原始完整文件逐字写入 `AGENTS.local.md`，由 DSH 原生工作区指令加载器提供；其他完整技能目录经原生 skill-filesystem 挂载，额外工具加载以原生日志为准 | 调研、8–12 个不同候选、近似工作比较、批评、修订及 Research Wiki |
 | SAGE / CoI 改造部分 | 真实检索、官方可用 arXiv 正文读取、跨章节证据卡、原文段落 ID 绑定、按需补读、来源范围和失败记录 | 给代理提供可追溯研究证据，避免只读摘要或把全文无差别塞入提示词 |
 | DeepSeek Harness | 官方 `@deepseek-ai/dsh` headless 运行时 | 使用模型 API 驱动技能、文件、shell 和研究 MCP 工具 |
 
@@ -37,7 +37,7 @@ python -m sage autonomous --allow-live \
   --output projects/conjectures-002
 ```
 
-没有方向时，代理自行调研 AI / 机器学习的若干子领域后选择一个可检验的问题。方向、目标期刊、预算可以配置；无需人工选论文或提供猜想。当前默认 DeepSeek `deepseek-v4-pro`；也可设置 `SAGE_MAIN_MODEL`。此原生入口目前针对 DeepSeek，通用 OpenAI-compatible 编码运行时尚未验证。
+没有方向时，代理自行调研 AI / 机器学习的若干子领域后选择一个可检验的问题。方向、目标期刊、预算可以配置；无需人工选论文或提供猜想。当前默认 API 型号 `deepseek-flash`，按 2026-10-18 的[官方映射](https://api-docs.deepseek.com/quick_start/pricing/)对应 DeepSeek-V4.1-Flash-1017，支持 1M tokens 上下文；也可设置 `SAGE_MAIN_MODEL`。上游模型别名会变化，实际响应记录另行保留。此原生入口目前针对 DeepSeek，通用 OpenAI-compatible 编码运行时尚未验证。
 
 DSH 固定为一致发行的 `0.2.0-rc.2`。其 Messages 接口使用 `https://api.deepseek.com/anthropic`，SAGE 阅读/批评器的 Chat Completions 使用 `https://api.deepseek.com`，不能混用。自有 Messages 网关使用 `SAGE_DSH_BASE_URL` 单独配置，参见 [DeepSeek 官方接口说明](https://api-docs.deepseek.com/guides/anthropic_api/)。
 
@@ -48,6 +48,7 @@ DSH 固定为一致发行的 `0.2.0-rc.2`。其 Messages 接口使用 `https://a
 ## 看哪些输出
 
 - `launch.json`：启动时框架文件哈希、上游版本、方向，明确是否预置论文和猜想。
+- `aris-inputs.json`：提供给原生 DSH 的五项原始技能、完整文件哈希与指令文件哈希。挂载目录或代理自述不算已读取证明。DSH 的默认 64 KiB 指令预算不足以容纳这些全文，入口自动扩展预算以保留正文和随后的当前任务；输入交付也不等于方法执行正确。技能文件直接通过原生指令加载器读取，避免原文 shell 示例被 CORAL 的配置插值器当成变量解析。
 - `manager.log` 与 `native-run/.coral/public/logs/`：原生管理器和代理日志。
 - `native-run/agents/agent-1/`：代理自己的 Research Wiki、`WORKFLOW_TRACE.md`、`conjectures.json`、中文 `CONJECTURES.md`，以及修订过程文件。实际代理名称由 CORAL 保存。
 - `native-run/.coral/public/attempts/`：各次提交、评分和失败原因；所有尝试保留。

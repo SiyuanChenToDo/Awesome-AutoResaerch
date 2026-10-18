@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from sage.autonomous.service import candidate_errors, read_primary, ResearchService
 from sage.autonomous.runner import prepare, dsh_endpoint
+from sage.autonomous.skills import REQUIRED_SKILLS, assemble_native_task
 
 
 def candidates():
@@ -77,6 +78,10 @@ class AutonomousTests(unittest.TestCase):
     def test_seed_is_empty_and_native_driver_is_configured(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
+            for name in REQUIRED_SKILLS:
+                skill = root / 'ARIS' / 'skills' / name / 'SKILL.md'
+                skill.parent.mkdir(parents=True)
+                skill.write_text('Original skill: ' + name + '\nLiteral ${shell(example)}', encoding='utf-8')
             config = prepare(root, topic='Topic', aris_root=root / 'ARIS', coral_python=Path('/python'),
                              dsh=Path('/dsh'), agent_user='research')
             self.assertEqual(config['agents']['runtime'], 'dsh')
@@ -87,8 +92,20 @@ class AutonomousTests(unittest.TestCase):
             self.assertFalse((root / 'seed' / 'conjectures.json').exists())
             self.assertFalse(list((root / 'seed').glob('*.pdf')))
             self.assertIn('process.env.SAGE_RESEARCH_TOKEN', (root / 'research.patch.yml').read_text())
+            receipt = json.loads((root / 'aris-inputs.json').read_text())
+            self.assertEqual(len(receipt['skills']), 5)
+            self.assertGreater(receipt['instruction_context_budget_bytes'], 65536)
+            self.assertIn('${shell(example)}', (root / 'seed' / 'AGENTS.local.md').read_text())
+            for name in REQUIRED_SKILLS:
+                self.assertIn('Original skill: ' + name, (root / 'seed' / 'AGENTS.local.md').read_text())
             if __import__('os').name == 'posix':
                 self.assertTrue((root / 'research.patch.yml').stat().st_mode & 0o004)
+
+    def test_missing_required_skill_cannot_silently_become_a_catalog_only_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            from sage.errors import ConfigurationError
+            with self.assertRaises(ConfigurationError):
+                assemble_native_task(Path(folder), 'Workflow')
 
 
 if __name__ == '__main__':
