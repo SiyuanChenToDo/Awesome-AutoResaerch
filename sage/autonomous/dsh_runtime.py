@@ -9,6 +9,7 @@ unmodified. Native DSH remains responsible for restoring messages and tools.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -18,13 +19,31 @@ import signal
 import subprocess
 import threading
 import uuid
+from urllib.request import Request, urlopen
 
 from ..artifacts import atomic_json, atomic_text
 
 logger = logging.getLogger(__name__)
 _SESSION = re.compile(r'session-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\Z')
 _OPTIONS = {'command', 'profile', 'patch', 'provider', 'permission_mode',
-            'tools_mode', 'session_state_dir'}
+            'tools_mode', 'session_state_dir', 'research_slot', 'research_team_size'}
+
+
+def team_token(token, slot):
+    return hmac.new(token.encode(), ('sage-research-slot:' + str(slot)).encode(), hashlib.sha256).hexdigest()
+
+
+def register_researcher(slot, agent_id, cwd, session_id):
+    """Manager-side registration from a validated native session event."""
+    request = Request('http://127.0.0.1:' + os.environ['SAGE_RESEARCH_PORT'] + '/tool',
+        data=json.dumps({'tool': 'runtime_register', 'arguments': {
+            'slot': slot, 'agent_id': agent_id, 'cwd': str(cwd), 'session_id': session_id}}).encode(),
+        headers={'Authorization': 'Bearer ' + os.environ['SAGE_RESEARCH_TOKEN'],
+                 'Content-Type': 'application/json'})
+    with urlopen(request, timeout=30) as response:
+        value = json.load(response)
+    if value.get('error'):
+        raise ValueError('Manager refused the native researcher identity')
 
 
 def checked_id(value):
@@ -180,6 +199,14 @@ class ResumableDeepSeekRuntime:
         if prompt is None:
             prompt = ('Continue the existing research session and address the current feedback.'
                       if resume_session_id else 'Begin working on your task and iterating on the seed solution.')
+        slot = opts.get('research_slot')
+        if slot is not None:
+            size = opts.get('research_team_size')
+            if type(slot) is not int or type(size) is not int or not 0 <= slot < size <= 4:
+                raise ValueError('Invalid research team assignment')
+            prompt = (f'Your authenticated research team slot is {slot}, native agent {agent_id}. '
+                      'Call the research team tool with action=status first for your role and required action. '
+                      'Follow the team protocol in the supplied instructions. Only slot 0 submits coral eval.\n\n' + prompt)
 
         dsh_home = worktree_path / '.dsh'
         dsh_home.mkdir(exist_ok=True)
@@ -206,6 +233,8 @@ class ResumableDeepSeekRuntime:
         env = _clean_env()
         env.update(DSH_HOME=str(dsh_home), UV_PROJECT_ENVIRONMENT=str(worktree_path / '.venv'),
                    VIRTUAL_ENV=str(worktree_path / '.venv'))
+        if slot is not None:
+            env['SAGE_RESEARCH_TOKEN'] = team_token(os.environ['SAGE_RESEARCH_TOKEN'], slot)
         env['PATH'] = str(venv_bin_dir(worktree_path / '.venv')) + os.pathsep + env.get('PATH', '')
         for option, variable in [('permission_mode', 'DSH_PERMISSION_MODE'), ('tools_mode', 'DSH_TOOLS_MODE')]:
             if opts.get(option):
@@ -256,6 +285,8 @@ class ResumableDeepSeekRuntime:
                                 (state['session_id'] and state['session_id'] != native_id)):
                             raise ValueError('Native DSH resumed an unexpected session or worktree')
                         save_session(worktree_path, agent_id, native_id, state_root=state_root)
+                        if slot is not None and state['session_id'] is None:
+                            register_researcher(slot, agent_id, worktree_path, native_id)
                         state['session_id'] = handle.session_id = native_id
                     elif state['session_id'] is None:
                         raise ValueError('Native DSH output arrived before its session identity')

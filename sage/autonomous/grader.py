@@ -19,7 +19,10 @@ class Grader(TaskGrader):
                                aggregated=0.0, feedback='Generate primary conjectures and use the research tools before submitting.')
         # Grader checkout is a different worktree; the manager-owned service
         # accepts only paths within this run and checks source IDs against its cache.
-        payload = json.dumps({'artifact_path': str(path)}).encode() + b'\n'
+        # CORAL supplies the submitting identity in manager-created Task metadata,
+        # outside the agent-authored primary manuscript.
+        agent_id = self.tasks[0].metadata.get('agent_id') if self.tasks else None
+        payload = json.dumps({'artifact_path': str(path), 'agent_id': agent_id}).encode() + b'\n'
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
             connection.settimeout(600)
             connection.connect(os.environ['SAGE_GRADER_SOCKET'])

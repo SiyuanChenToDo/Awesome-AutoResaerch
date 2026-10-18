@@ -85,6 +85,10 @@ class AutonomousTests(unittest.TestCase):
             config = prepare(root, topic='Topic', aris_root=root / 'ARIS', coral_python=Path('/python'),
                              dsh=Path('/dsh'), agent_user='research')
             self.assertEqual(config['agents']['runtime'], 'sage.autonomous.dsh_runtime:ResumableDeepSeekRuntime')
+            self.assertEqual(config['agents']['count'], 4)
+            self.assertEqual([a['runtime_options']['research_slot'] for a in config['agents']['assignments']], [0,1,2,3])
+            self.assertTrue(all(a['count'] == 1 for a in config['agents']['assignments']))
+            self.assertIn('team protocol', (root / 'seed' / 'AGENTS.local.md').read_text())
             self.assertEqual(config['agents']['runtime_options']['session_state_dir'], str(root / 'session-state'))
             self.assertEqual(config['run']['session'], 'local')
             self.assertEqual(config['agents']['isolate_user'], 'research')
@@ -107,6 +111,12 @@ class AutonomousTests(unittest.TestCase):
             from sage.errors import ConfigurationError
             with self.assertRaises(ConfigurationError):
                 assemble_native_task(Path(folder), 'Workflow')
+
+    def test_rejected_candidate_cannot_be_a_survivor(self):
+        item = candidates()
+        item['candidates'][0]['disposition'] = 'rejected'
+        errors = candidate_errors(item, {'p1': {}, 'p2': {}}, {'p1': {'claims': [1]}})
+        self.assertTrue(any('Rejected candidates' in x for x in errors))
 
 
 if __name__ == '__main__':

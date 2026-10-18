@@ -41,7 +41,11 @@ python -m sage autonomous --allow-live \
 
 DSH 固定为一致发行的 `0.2.0-rc.2`。其 Messages 接口使用 `https://api.deepseek.com/anthropic`，SAGE 阅读/批评器的 Chat Completions 使用 `https://api.deepseek.com`，不能混用。自有 Messages 网关使用 `SAGE_DSH_BASE_URL` 单独配置，参见 [DeepSeek 官方接口说明](https://api-docs.deepseek.com/guides/anthropic_api/)。
 
-默认 4 次 CORAL 正式提交、160 次研究工具调用、2 小时总时限。它们用于防止失控运行，不是每节字数、候选篇幅或科研内容的压缩规则；可以调整 `--max-attempts`、`--max-tools`、`--wall-seconds`。原生 DSH 的主代理调用和重试另有自己的记录，不能把研究工具次数当作总 API 调用数或费用上限。
+默认四位独立会话的研究者、两轮互评，由团队产生总计 8–12 个候选，再由 slot 0 综合、批评修订并提交 CORAL。每位研究者有自己的工作区和候选历史；同家族 API 的多个上下文不能称为独立模型专家。初稿全部齐备后才开放同伴稿，每轮互评齐备后才修订，最终稿保留每个候选的来源和逐条处理意见，见[团队协议与验收要求](native-team-protocol.md)。这补齐了此前原生主线未接入团队讨论的问题；此前 run-10 仍是单主研究者的历史结果，不能用新的配置追溯改变。
+
+可通过 `--researchers 1` 使用单研究者流程，或设置 `--researchers 2/3/4` 和 `--discussion-rounds 1/2/3`。多研究者只用 slot 0 执行 `coral eval`，其他研究者通过团队工具交换冻结提案、批评和修订。
+
+默认 4 次 CORAL 正式提交、160 次研究工具调用、2 小时总时限，由整个研究团队共享。它们用于防止失控运行，不是每节字数、候选篇幅或科研内容的压缩规则；可以调整 `--max-attempts`、`--max-tools`、`--wall-seconds`。多研究者会增加实际模型调用量，需要按研究范围配置预算；原生 DSH 的各研究者调用和重试另有自己的记录，不能把研究工具次数当作总 API 调用数或费用上限。
 
 安装记录在 `$SAGE_NATIVE_HOME/runtime.json`，默认 `~/.cache/sage/native/runtime.json`。已有环境可显式指定 `--coral-python`、`--aris-root`、`--dsh`。研究主进程也需能导入 openai、pypdf；可使用安装目录 `python/bin/python` 运行本仓库。部署脚本采用 pnpm，避免观察到的 npm 对 DSH 预发布依赖循环解析问题。
 
@@ -50,10 +54,10 @@ DSH 固定为一致发行的 `0.2.0-rc.2`。其 Messages 接口使用 `https://a
 - `launch.json`：启动时框架文件哈希、上游版本、方向，明确是否预置论文和猜想。
 - `aris-inputs.json`：提供给原生 DSH 的五项原始技能、完整文件哈希与指令文件哈希。挂载目录或代理自述不算已读取证明。DSH 的默认 64 KiB 指令预算不足以容纳这些全文，入口自动扩展预算以保留正文和随后的当前任务；输入交付也不等于方法执行正确。技能文件直接通过原生指令加载器读取，避免原文 shell 示例被 CORAL 的配置插值器当成变量解析。
 - `manager.log` 与 `native-run/.coral/public/logs/`：原生管理器和代理日志。
-- `native-run/agents/agent-1/`：代理自己的 Research Wiki、`WORKFLOW_TRACE.md`、`conjectures.json`、中文 `CONJECTURES.md`，以及修订过程文件。实际代理名称由 CORAL 保存。
+- `native-run/agents/<实际代理名>/`：每位研究者自己的 Research Wiki、`WORKFLOW_TRACE.md`、提案和修订文件；slot 0 还保存综合的 `conjectures.json`、中文 `CONJECTURES.md`。实际代理名称由 CORAL 保存。
 - `native-run/.coral/public/attempts/`：各次提交、评分和失败原因；所有尝试保留。
 - `service-private/evidence.json`、`events.jsonl`：管理器拥有的原始检索、阅读范围、证据卡、请求与评审收据。代理不能改写该目录。
-- `result.json`：工程完成状态、实际检索/阅读/批评数量、框架运行中是否变化及独立验收状态。
+- `result.json`：工程完成状态、实际检索/阅读/批评数量、`research_team` 团队过程汇总、框架运行中是否变化及独立验收状态。
 - 顶层 `conjectures.json`、`CONJECTURES.md`：从已评分的冻结提交保留副本中直接导出的猜想与中文报告；`selected_grade` 记录对应提交和文件哈希。没有符合来源契约的提交时，不冒充成功产物。
 
 证据卡提炼最多读取分布在文档中的 12 个片段，覆盖方法、实验、限制等部分。新版让模型选择原文段落 ID，由程序回填未经改写的原文和位置，避免模型重打公式或标点导致有效信息整批丢失。每条来源绑定单独校验，非法主张被拒绝并记录，其他有效主张保留；不能用来源 ID 绑定冒充语义蕴含证明。
@@ -63,6 +67,8 @@ DSH 固定为一致发行的 `0.2.0-rc.2`。其 Messages 接口使用 `https://a
 每次批评在调用模型前保存原始猜想文件、实际证据包和请求，后续修改不覆盖先前版本。批评明确检查变量定义、方向/单调性、条件和已有理论，并区分历史淘汰候选与当前选中候选。
 
 `review-1`、`review-2` 等是按发生顺序编号的评审调用，可能分别对应不同修订版本，不能当作多个独立 reviewer 或把分数合并为共识。`grading=false` 是代理主动请求的批评，`grading=true` 是 CORAL 冻结提交触发的正式模型评价；同一个 API 型号的新上下文均保留为同家族建议。
+
+团队的 `team` 工具另行记录研究者提案、同伴互评与逐条采纳/拒绝/未知决议。它们不与上述批评或 CORAL 正式评分混计。正式评分在团队模式下还要求团队轮次完整、综合候选来源齐全，且实际稿件 SHA 与已登记综合版本一致；源码配置和软件契约通过不代表多研究者实时运行或质量提升已验证。
 
 评分器先核对候选是否有真实来源、提炼证据、最近工作比较、反例检索和可证伪条件，再向模型发送实际猜想文件及来源。它不运行候选代码。模型分数是提案成熟度建议，不能证明创新性、有效性或可发表性。原始文件和失败保留用于复核。
 

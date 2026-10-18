@@ -21,13 +21,13 @@
 
 **Scientific Agent for Grounded Exploration** 是一个科研猜想发现与证据工作台。新增原生自主入口使用 [CORAL](https://github.com/Human-Agent-Society/CORAL) 管理 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，加载 [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 研究技能，自行调研、提出猜想、查新、批评和修订。既有模块化提案、实验与写作代码位于 [sage/](sage/)，包含对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。
 
-**当前软件验证**：460 项离线测试在 Windows 和 AutoDL Linux 通过。原生 DSH 会话续接已修复并完成真实恢复验收，见[续接验证](docs/native-session-validation-20261018.md)。Flash 的原生自主猜想闭环已完成一次真实运行，见[实际验证与未解决问题](docs/native-conjecture-validation-20261018.md)；运行方式和单 API 边界见[自主猜想发现](docs/autonomous-conjectures.md)。调用完成、文档有内容、模型分数与科学结论成立分别记录。
+**当前软件验证**：508 项离线测试已在 AutoDL Linux 和 Windows 通过（Windows 跳过 3 项 Unix 专用权限检查）。原生 DSH 会话续接已修复并完成真实恢复验收，见[续接验证](docs/native-session-validation-20261018.md)。此前 Flash 的 run-10 完成了单主研究者自主猜想闭环，见[实际验证与未解决问题](docs/native-conjecture-validation-20261018.md)；新的四研究者团队验证已启动，尚未完成互评、修订与综合闭环。运行方式和单 API 边界见[自主猜想发现](docs/autonomous-conjectures.md)。调用完成、团队过程完成、模型分数与科学结论成立分别记录。
 
 **历史验证范围**：较早的 `sage closed-loop` 使用固定真实论文语料和固定符号回归程序，完成了开发、确认、统计、报告和反算核对。它验证子实验的工程连接，不能当作全自主科研的证明。详见[闭环验证](docs/closed-loop-validation-20261018.md)、[写作修复验证](docs/writing-validation-20261018.md)与[较早的接入验证](docs/aris-coral-validation-20261018.md)。
 
 <a id="capabilities"></a>
 
-**自主猜想入口**：新增 `sage autonomous`，由原生 CORAL 管理器运行 DeepSeek Harness，挂载 ARIS 原始研究技能，调用 SAGE 的真实检索和跨章节证据提炼工具。从空项目自动调研、生成、查新、找反证和批评修订，见[安装与使用](docs/autonomous-conjectures.md)。这与此前固定符号回归子实验的 `closed-loop` 是不同入口；只有单一模型 API 时，输出是待验证猜想，同家族互评不算 ARIS 独立验收。
+**自主猜想入口**：`sage autonomous` 由原生 CORAL 管理器运行 DeepSeek Harness，挂载 ARIS 原始研究技能，调用 SAGE 的真实检索和跨章节证据提炼工具。默认四位独立会话的研究者、两轮同伴互评，经过冻结提案、逐条修订和协调者综合；见[团队协议与验收](docs/native-team-protocol.md)及[安装与使用](docs/autonomous-conjectures.md)。现有模块拆分与证据卡类别保持原样。只有单一模型 API 时，输出是待验证猜想，同家族多会话互评不算 ARIS 跨家族独立验收。
 
 **完整论文写作更新**：已移除原先每节一段、160 词 / 1400 字符的篇幅限制。新增 `sage write-paper`，支持完整正文、公式、已核对的引文、实测图表、整篇多视角评阅与修订，以及 LaTeX / Markdown 输出；见[完整论文入口](docs/full-manuscript.md)。它将论文完整性与科研结论是否成立分别记录。原 `write-report` 保留为证据账本兼容入口。
 

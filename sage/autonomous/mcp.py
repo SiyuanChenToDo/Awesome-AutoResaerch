@@ -18,7 +18,14 @@ TOOLS = [
      {'paper_id': {'type': 'string'}, 'chunk_ids': {'type': 'array', 'items': {'type': 'string'}}}),
     ('critique', 'Fresh-context adversarial review of a primary conjectures JSON file. Same-family review is advisory, never independent acceptance.',
      {'artifact_path': {'type': 'string'}, 'focus': {'type': 'string'}}),
-    ('evidence', 'Return retrieved metadata, reading scopes, evidence capsules and prior review receipts for writing the research wiki.', {})]
+    ('evidence', 'Return retrieved metadata, reading scopes, evidence capsules and prior review receipts for writing the research wiki.', {}),
+    ('team', 'Authenticated native research team: status returns your role, next action and frozen peer proposals. Publish own proposal; review assigned peer; revise addressing every incoming issue; slot 0 synthesizes only after all rounds. Identity is assigned by the manager, never by tool arguments.',
+     {'action': {'type': 'string', 'enum': ['status', 'propose', 'review', 'revise', 'synthesize']},
+      'artifact_path': {'type': 'string'}, 'target_slot': {'type': 'integer'},
+      'round': {'type': 'integer'},
+      'proposal_sha256': {'type': 'string'},
+      'issues': {'type': 'array', 'items': {'type': 'object'}},
+      'decisions': {'type': 'array', 'items': {'type': 'object'}}})]
 
 
 def request_service(tool, arguments):
@@ -42,7 +49,7 @@ def main():
                           'serverInfo': {'name': 'sage-research', 'version': '1.0.0'}}
             elif method == 'tools/list':
                 result = {'tools': [{'name': n, 'description': d, 'inputSchema': {'type': 'object', 'properties': p,
-                    'required': list(p) if n in ('read', 'critique') else (['query'] if n == 'search' else (['paper_id'] if n == 'passages' else [])),
+                    'required': list(p) if n in ('read', 'critique') else (['query'] if n == 'search' else (['paper_id'] if n == 'passages' else (['action'] if n == 'team' else []))),
                     'additionalProperties': False}} for n, d, p in TOOLS]}
             elif method == 'tools/call':
                 params = msg['params']

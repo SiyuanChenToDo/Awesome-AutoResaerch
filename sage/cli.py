@@ -419,6 +419,8 @@ def main(argv=None):
     autonomous.add_argument('--max-attempts',type=int,default=4)
     autonomous.add_argument('--max-tools',type=int,default=160)
     autonomous.add_argument('--wall-seconds',type=int,default=7200)
+    autonomous.add_argument('--researchers',type=int,choices=(1,2,3,4),default=4)
+    autonomous.add_argument('--discussion-rounds',type=int,choices=(1,2,3),default=2)
     sub.add_parser('doctor', help='Inspect local setup without network or exposing secrets')
     coral = sub.add_parser('coral-evaluate', help='Execute a frozen reviewed task with the real CORAL grader')
     coral.add_argument('--contract',type=Path,required=True)

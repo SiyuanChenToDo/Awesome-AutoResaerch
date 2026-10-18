@@ -53,12 +53,17 @@ def require_pin(path, expected):
         raise ConfigurationError('Native upstream checkout has tracked modifications')
 
 
-def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max_attempts=4):
+def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max_attempts=4,
+            researchers=4, discussion_rounds=2):
     """Create a reproducible native task. This function never calls a model."""
     destination = Path(destination)
     seed = destination / 'seed'
     seed.mkdir()
+    if researchers not in (1, 2, 3, 4) or not 1 <= discussion_rounds <= 3:
+        raise ConfigurationError('Use 1–4 researchers and 1–3 discussion rounds')
     workflow = (Path(__file__).parent / 'workflow.md').read_text(encoding='utf-8')
+    if researchers > 1:
+        workflow += '\n\n' + (Path(__file__).parent / 'team-workflow.md').read_text(encoding='utf-8')
     native_task, skill_receipt = assemble_native_task(aris_root, workflow)
     # DSH's shipped 64-KiB workspace-instruction budget would cut these original
     # methods and the following task in the middle. Reserve room for CORAL's
@@ -103,7 +108,7 @@ def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max
                        'tips': 'Read RESEARCH_BRIEF.md; all research decisions belong to the agent.'},
         'grader': {'entrypoint': 'sage_conjecture_grader:Grader', 'setup': [f'uv pip install --no-deps {shlex.quote(str(grader))}'],
                    'timeout': 600, 'direction': 'maximize'},
-        'agents': {'count': 1, 'runtime': 'sage.autonomous.dsh_runtime:ResumableDeepSeekRuntime',
+        'agents': {'count': researchers, 'runtime': 'sage.autonomous.dsh_runtime:ResumableDeepSeekRuntime',
             'model': os.environ.get('SAGE_MAIN_MODEL', 'deepseek-flash'),
             # DSH streams progress to stderr, while CORAL's stdout-only stall
             # clock falsely restarts a working headless session. The outer
@@ -117,6 +122,11 @@ def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max
         'workspace': {'repo_path': str(seed), 'results_dir': str(destination / 'results'),
                       'run_dir': str(destination / 'native-run')},
         'run': {'session': 'local', 'verbose': False, 'stop': {'max_real_attempts': max_attempts}}}
+    if researchers > 1:
+        config['agents']['assignments'] = [
+            {'count': 1, 'runtime_options': {'research_slot': slot,
+                                          'research_team_size': researchers}}
+            for slot in range(researchers)]
     atomic_json(destination / 'task.yaml', config)  # JSON is valid YAML.
     return config
 
@@ -162,7 +172,8 @@ def run(args, destination):
             '--output', str(destination), '--topic', args.topic, '--coral-python', str(coral_python),
             '--aris-root', str(aris_root), '--dsh', str(dsh), '--agent-user', args.agent_user,
             '--max-attempts', str(args.max_attempts), '--max-tools', str(args.max_tools),
-            '--wall-seconds', str(args.wall_seconds)], cwd=ROOT, env=env)
+            '--wall-seconds', str(args.wall_seconds), '--researchers', str(args.researchers),
+            '--discussion-rounds', str(args.discussion_rounds)], cwd=ROOT, env=env)
     require_pin(aris_root, ARIS_COMMIT)
     coral_root = Path(command([coral_python, '-c', 'import coral;from pathlib import Path;print(Path(coral.__file__).resolve().parent.parent)']))
     require_pin(coral_root, CORAL_COMMIT)
@@ -182,10 +193,12 @@ def run(args, destination):
         'upstreams': {'ARIS': ARIS_COMMIT, 'CORAL': CORAL_COMMIT},
         'integration': 'native CORAL AgentManager -> native DSH -> original ARIS skills + SAGE research tools',
         'seeded_paper_corpus': False, 'seeded_hypotheses': False,
-        'agent_uid': user.pw_uid, 'scientific_validation': 'not_performed'}
+        'agent_uid': user.pw_uid, 'researchers': args.researchers,
+        'discussion_rounds': args.discussion_rounds, 'scientific_validation': 'not_performed'}
     atomic_json(destination / 'launch.json', manifest)
     prepare(destination, topic=topic, aris_root=aris_root, coral_python=coral_python,
-            dsh=dsh, agent_user=args.agent_user, max_attempts=args.max_attempts)
+            dsh=dsh, agent_user=args.agent_user, max_attempts=args.max_attempts,
+            researchers=args.researchers, discussion_rounds=args.discussion_rounds)
     resolved = json.loads(command([coral_python, '-c',
         'import hashlib,json,sys;from coral.config import CoralConfig;'
         'c=CoralConfig.from_yaml(sys.argv[1]);c.to_yaml(sys.argv[2]);'
@@ -206,7 +219,8 @@ def run(args, destination):
         cwd=destination, user=user.pw_uid, group=user.pw_gid, extra_groups=[])
     atomic_json(destination / 'isolation-preflight.json', json.loads(probe))
     token = secrets.token_hex(32)
-    service = ResearchService(destination / 'service-private', destination, topic, max_tools=args.max_tools)
+    service = ResearchService(destination / 'service-private', destination, topic, max_tools=args.max_tools,
+                              researchers=args.researchers, discussion_rounds=args.discussion_rounds)
     server = serve(service, token)
     grader_server, grader_socket = serve_grader(service)
     # CORAL's OS-user helper adds safe.directory entries with git --system.
@@ -272,14 +286,18 @@ def run(args, destination):
         shutil.copy2(service.private / f'report-{sha}.md', destination / 'CONJECTURES.md')
     selected_review = next((r for r in service.reviews if best and r['id'] == best.get('review_id')), None)
     unchanged = manifest['framework_files'] == source_manifest(ROOT)
+    team = service.team.summary() if service.team else None
     complete = (status == 'native_manager_finished' and best is not None and unchanged and
-                sum(not r['grading'] for r in service.reviews) >= 2)
+                sum(not r['grading'] for r in service.reviews) >= 2 and
+                (team is None or not service.team.grade_errors(
+                    json.loads((destination / 'conjectures.json').read_text(encoding='utf-8')),
+                    best['primary_sha256'])))
     final = {'status': status, 'finished': now(), 'output': str(destination),
         'papers_retrieved': len(service.papers), 'papers_read': len(service.cards),
         'searches': len(service.searches), 'critiques': len(service.reviews),
         'framework_unchanged_during_run': unchanged,
         'workflow_status': 'completed_autonomous_conjectures' if complete else 'incomplete',
-        'graded_attempts': len(service.grades), 'selected_grade': best,
+        'graded_attempts': len(service.grades), 'selected_grade': best, 'research_team': team,
         'aris_skill_inputs': json.loads((destination / 'aris-inputs.json').read_text(encoding='utf-8')),
         'model_review_status': ('high_priority_issues_open' if selected_review and
             any(x.get('severity') == 'high' for x in selected_review['review']['issues']) else 'model_review_only'),
