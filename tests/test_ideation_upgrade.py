@@ -202,13 +202,13 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(InvalidResponse):await Discovery(r).rank([Paper('p','P')],'query')
         self.assertEqual(r.usage['model_calls'],1)
 
-    async def test_long_ranking_reason_gets_specific_feedback_not_silent_truncation(self):
+    async def test_oversized_raw_ranking_reason_gets_specific_feedback(self):
         r=self.runtime(rerank_mode='model',retry_attempts=2)
         requests=[]
         class Model:
             async def complete(self,stage,prompt,**kwargs):
                 requests.append(prompt)
-                reason='x'*181 if len(requests)==1 else 'Direct mechanism match.'
+                reason='x'*1201 if len(requests)==1 else 'Direct mechanism match.'
                 return '<ranking>'+json.dumps([{'paper_id':'p','score':4,'reason':reason}])+'</ranking>'
         r.cheap_model=Model()
         papers=await Discovery(r).rank([Paper('p','Paper')],'query')

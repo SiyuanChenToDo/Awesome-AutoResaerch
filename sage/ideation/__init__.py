@@ -12,7 +12,7 @@ class Ideation:
     def __init__(self, runtime, review):
         self.runtime, self.review = runtime, review
 
-    async def generate(self, chain, topic):
+    async def generate(self, chain, topic, *, lens=None):
         import json
         rich = self.runtime.config.evidence_mode == 'capsule'
         entities = [e.entities for e in chain.evidence]
@@ -49,6 +49,9 @@ class Ideation:
                     'No invented numerical findings, novelty proof or unsupported paper details. '
                     'Output <method>steps and test</method><novelty>claimed delta, unverified</novelty>'
                     '<motivation>source IDs, gap versus inference</motivation>.')
+            if lens:
+                method_prompt += '\nAssigned analytic lens: ' + lens + '. Keep the same evidence standard; seek a distinct falsifiable hypothesis, not merely different wording.'
+                self.runtime.event('ideation.lens', 'assigned', lens=lens)
             raw = await self.runtime.ask('ideation.generate', method_prompt,
                                          ('method', 'novelty', 'motivation'))
             final_prompt = get_deep_final_idea_prompt(chain.text, chain.trend, raw, topic)

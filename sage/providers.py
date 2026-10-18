@@ -312,6 +312,12 @@ class OpenAIModel:
             raise _provider_error(error, "Model provider") from None
         try:
             usage = getattr(reply, 'usage', None)
+            self.last_response_model = getattr(reply, 'model', None)
+            self.last_response_id = getattr(reply, 'id', None)
+            for name in ('last_response_model', 'last_response_id'):
+                value = getattr(self, name)
+                if not isinstance(value, str) or len(value) > 200 or not re.fullmatch(r'[A-Za-z0-9_./:@+\-]+', value):
+                    setattr(self, name, None)
             self.last_usage = {key: getattr(usage, key, None) for key in
                                ('prompt_tokens', 'completion_tokens', 'total_tokens')}
             choice = reply.choices[0]

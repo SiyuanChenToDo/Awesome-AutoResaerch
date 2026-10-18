@@ -36,6 +36,9 @@ class RateLimited(TransientProviderError):
 # Only these authored strings may enter diagnostics or retry instructions.
 # Never reflect unknown JSON keys, model values, or arbitrary exception messages.
 _VALIDATION_RULES = {
+    'claim_queries_1': 'Return at most ONE short query in each claims[].queries array. Do not return three aspect queries.',
+    'claim_queries_2': 'Return at most TWO short queries in each claims[].queries array. Select two aspects; do not return three.',
+    'claim_queries_3': 'Return at most THREE short queries in each claims[].queries array.',
     'json_object': 'Return one valid JSON object without markdown fences.',
     'duplicate_key': 'Do not repeat JSON object keys.',
     'schema_keys': 'Return exactly the requested schema keys, no missing or extra fields.',
@@ -58,14 +61,14 @@ _VALIDATION_RULES = {
     'required_tag': 'Return exactly one nonempty required output tag.',
     'unspecified': 'Output failed validation; follow the original contract without inventing a diagnosis.',
     'bounded_commentary': 'Return one concise qualitative paragraph within 1400 characters; preserve uncertainty and do not invent facts to fit.',
-    'bounded_ranking_reason': 'Each ranking reason must be at most 180 characters; preserve all supplied IDs and numeric scores.',
+    'bounded_ranking_reason': 'Each raw ranking reason must be at most 1200 characters; the controller preserves full text and creates a marked 180-character preview. Preserve all supplied IDs and numeric scores.',
     'source_excerpt': 'Copy a contiguous 15-280 character quote only from INPUT_CHUNK, not from metadata or another chunk. Keep claims <=350 characters and the exact supplied chunk_id; omit unsupported claims.',
     'canonical_requirements_managed': 'Return requirements=[] in v3. The controller attaches exact approved requirements from selected accepted_critique_ids.',
 }
 _VALIDATION_FIELDS = frozenset(('$', 'discussion', 'experiment', 'plan_contract', 'idea', 'commentary',
     'status', 'evidence_ids', 'accepted_critique_ids', 'rejected_critique_ids', 'selected_index',
     'requirements', 'critique_id', 'requirement', 'rationale', 'uncertainty', 'issue',
-    'requested_change', 'support', 'reason', 'quote'))
+    'requested_change', 'support', 'reason', 'quote', 'queries'))
 
 
 class ValidationError(InvalidResponse):

@@ -57,6 +57,8 @@ class NoveltyAssessment:
     similar_paper_id: str | None = None
     basis: str = "model_assessment_of_retrieved_sources"
     comparisons: list[dict[str, Any]] = field(default_factory=list)
+    research_claims: list[dict[str, Any]] = field(default_factory=list)
+    review_receipt: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

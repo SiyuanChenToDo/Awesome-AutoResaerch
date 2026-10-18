@@ -282,7 +282,8 @@ def proposal_context(proposal):
             **{key: deepcopy(candidate[key]) for key in ('idea', 'future', 'human_considerations') if key in candidate},
             'chain': {key: deepcopy(chain[key]) for key in ('evidence', 'trend', 'entities', 'relation', 'stop_reasons') if key in chain},
             'novelty': {**{key: deepcopy(novelty[key]) for key in ('status', 'summary', 'similar_paper_id', 'basis') if key in novelty},
-                        'compared_source_ids': [p.get('paper_id') for p in novelty.get('compared_papers', [])]},
+                        'compared_source_ids': [p.get('paper_id') for p in novelty.get('compared_papers', [])],
+                        **{key:deepcopy(novelty[key]) for key in ('research_claims','review_receipt') if key in novelty}},
             'rejected_attempts': [{key: deepcopy(attempt[key]) for key in
                 ('attempt', 'summary', 'similar_paper_id', 'queries') if key in attempt}
                 for attempt in candidate.get('rejected_attempts', [])]})

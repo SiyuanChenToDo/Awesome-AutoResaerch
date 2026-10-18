@@ -76,6 +76,20 @@ class FixtureModel:
         if stage.startswith('discussion.'):
             from .discussion.fixtures import respond
             return respond(stage, prompt)
+        if stage == 'review.claims.extract':
+            papers = json.loads(prompt.split('READ_EVIDENCE: ',1)[1].split('\nExtract ',1)[0])
+            return '<claims>' + json.dumps([{'statement':'Synthetic proposed mechanism, not a finding.',
+                'kind':'method','source_ids':[papers[0]['paper_id']], 'queries':['sage-fixture-novelty'],
+                'falsifier':'A paired synthetic control shows no change.'}]) + '</claims>'
+        if stage == 'review.claims.assess':
+            dossier = json.loads(prompt.split('CLAIM_DOSSIER: ',1)[1].split('\nIndependently ',1)[0])
+            return '<assessment>' + json.dumps({'overall_verdict':'insufficient_evidence',
+                'combination_prior_id':None,'score':5,'verdict':'not ready','uncertainty':'Synthetic fixture only.',
+                'assessments':[{'claim_id':d['claim']['claim_id'],'status':'insufficient_evidence',
+                    'closest_paper_id':d['sources'][0]['paper']['paper_id'] if d['sources'] else None,
+                    'overlap':'Synthetic context.','delta':'Unverified proposal.',
+                    'evidence_limit':'Fixture is not scientific evidence.','decisive_test':'Run the fixed synthetic comparison.'}
+                    for d in dossier]}) + '</assessment>'
         if stage == 'literature.capsule':
             chunk = json.loads(prompt.split('INPUT_CHUNK: ', 1)[1])
             value = {'claims': [{'category': 'method', 'claim': 'Synthetic fixture text, not empirical evidence.',

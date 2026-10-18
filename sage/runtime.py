@@ -35,8 +35,10 @@ def string_list(value: str, limit: int) -> list[str]:
 
 
 class Runtime:
-    def __init__(self, main_model, cheap_model, source, config: RunConfig, *, clock=time.monotonic, checkpoint=None, cache_only_retrieval=False, allow_incomplete_novelty=False, retry_uncertain=False, retain_rejected_responses=False, event_sink=None):
+    def __init__(self, main_model, cheap_model, source, config: RunConfig, *, clock=time.monotonic, checkpoint=None, cache_only_retrieval=False, allow_incomplete_novelty=False, retry_uncertain=False, retain_rejected_responses=False, event_sink=None, reviewer_model=None, aris_gate=None):
         self.main_model = main_model
+        self.reviewer_model = reviewer_model
+        self.aris_gate = aris_gate
         self.cheap_model = cheap_model
         self.source = source
         self.config = config
@@ -160,11 +162,11 @@ class Runtime:
                 raise ProviderError('Unexpected provider failure') from None
         raise AssertionError('unreachable')
 
-    async def ask(self, stage, prompt, required, *, cheap=False, allow_empty=(), validate=None):
+    async def ask(self, stage, prompt, required, *, cheap=False, allow_empty=(), validate=None, reviewer=False):
         prompt = GUARDRAILS + getattr(self.source, "prompt_policy", "") + prompt
         if len(prompt) > self.config.max_prompt_chars:
             raise BudgetExceeded('Prompt length limit reached; narrow topic or chain')
-        model = self.cheap_model if cheap else self.main_model
+        model = (self.reviewer_model or self.main_model) if reviewer else (self.cheap_model if cheap else self.main_model)
         shortened = False
         feedback = None
         local_attempt = 0
@@ -211,6 +213,13 @@ class Runtime:
                 values = tags(response, tuple(required), tuple(allow_empty))
                 if validate:
                     validate(values)
+                if reviewer:
+                    self.event(stage, 'response_receipt', base_input_sha256=digest(prompt),
+                        input_sha256=digest(request), response_sha256=digest(response),
+                        requested_model=getattr(getattr(model, 'config', None), 'model', 'fixture'),
+                        returned_model=getattr(model, 'last_response_model', None),
+                        response_id=getattr(model, 'last_response_id', None),
+                        model_call_number=self.usage['model_calls'])
                 return values
             except InvalidResponse as error:
                 diagnostic = error.diagnostic() if isinstance(error, ValidationError) else ValidationError().diagnostic()
@@ -228,9 +237,11 @@ class Runtime:
                            response_chars=len(response) if isinstance(response, str) else None,
                            raw_retained_in_private_checkpoint=retained)
                 raise
-        values = await self.call('model', stage, operation, output_tokens=self.config.max_tokens_per_call,
-                                 cache_input={'prompt': prompt, 'required': list(required),
-                                              'allow_empty': list(allow_empty), 'cheap': cheap})
+        cache_input = {'prompt': prompt, 'required': list(required), 'allow_empty': list(allow_empty), 'cheap': cheap}
+        if reviewer:
+            from .checkpoints import provider_identity
+            cache_input['reviewer'] = provider_identity(model)
+        values = await self.call('model', stage, operation, output_tokens=self.config.max_tokens_per_call, cache_input=cache_input)
         # Recheck cached values under the current caller's ownership/structure validator.
         if validate:
             try:

@@ -85,7 +85,7 @@ class Discovery:
                         any(type(x['score']) is not int or not 0 <= x['score'] <= 4 or
                             not isinstance(x['reason'], str) or not x['reason'] for x in rows)):
                         raise ValueError
-                    if any(len(x['reason']) > 180 for x in rows):
+                    if any(len(x['reason']) > 1200 for x in rows):
                         raise ValidationError('bounded_ranking_reason', 'reason')
                 except (ValueError, TypeError, KeyError):
                     raise InvalidResponse('Semantic ranking requires each supplied ID exactly once with score 0-4') from None
@@ -98,7 +98,14 @@ class Discovery:
                 'Score must be an integer from 0 through 4. INPUT_PAPERS: ' + json.dumps(records),
                 ('ranking',), cheap=True, validate=validate)
             rows = json.loads(response['ranking']); scores = {x['paper_id']: x['score'] for x in rows}
-            self.runtime.event('discovery.ranking', 'semantic_model', ranking=rows,
+            # Narrative length is a presentation concern, not a reason to lose
+            # valid IDs/scores or buy another model response. Preserve the full
+            # bounded text and project a marked preview; never change the votes.
+            from ..checkpoints import digest
+            projected=[{**row,'reason':row['reason'][:180],
+                        'reason_truncated':len(row['reason'])>180,
+                        'full_reason':row['reason'],'full_reason_sha256':digest(row['reason'])} for row in rows]
+            self.runtime.event('discovery.ranking', 'semantic_model', ranking=projected,
                                omitted_pool_count=max(0, len(papers)-len(pool)), basis='unverified_model_opinion')
             return sorted((p for p in pool if scores[p.paper_id] > 0), key=lambda p: -scores[p.paper_id])
         if self.runtime.config.rerank_mode != 'lexical' and getattr(model, 'embedding_enabled', False):
@@ -118,7 +125,7 @@ class Discovery:
             self.runtime.event('discovery.ranking', 'lexical_fallback', paper_count=len(papers))
         return [paper for _, paper in sorted(zip(scores, papers), key=lambda pair: -pair[0])]
 
-    async def search(self, query, *, limit=5, exclude=()):
+    async def search(self, query, *, limit=5, exclude=(), rerank=True):
         if not isinstance(query, str) or not query.strip():
             return []
         async def operation():
@@ -130,11 +137,19 @@ class Discovery:
                 self.runtime.event("discovery.date_filter", "excluded", count=len(valid) - len(included))
             return included
         papers = await self.runtime.call('search', 'discovery.search', operation, cache_input={'query': query, 'limit': limit, 'exclude': sorted(exclude), 'publication_date': self.runtime.config.publication_date})
-        chosen = self.attach_articles((await self.rank(papers, query))[:limit])
+        if rerank:
+            chosen = self.attach_articles((await self.rank(papers, query))[:limit])
+        else:
+            # Prior-art screening preserves bounded provider-order candidates;
+            # a generator's relevance score must not silently eliminate counter-work.
+            chosen = self.attach_articles(papers[:limit])
+            self.runtime.event('discovery.rerank','skipped_for_comparison_recall',
+                               retained_ids=[p.paper_id for p in chosen], omitted=len(papers)-len(chosen),
+                               ordering='provider_order_not_model_preference')
         self.runtime.event("discovery.retrieval", "recorded", query=query, papers=[paper_record(p) for p in chosen])
         return chosen
 
-    async def search_expanded(self, query, *, limit=5, exclude=()):
+    async def search_expanded(self, query, *, limit=5, exclude=(), rerank=True):
         """Bounded provider-aware relaxation; every attempt consumes shared budget."""
         attempts = [query]
         relax = getattr(self.runtime.source, 'relax_queries', None)
@@ -143,7 +158,7 @@ class Discovery:
         attempted = []
         for variant in dict.fromkeys(attempts):
             attempted.append(variant)
-            papers = await self.search(variant, limit=limit, exclude=exclude)
+            papers = await self.search(variant, limit=limit, exclude=exclude, rerank=rerank)
             if papers:
                 return papers, attempted
             self.runtime.event('discovery.search_relaxation', 'empty', query=variant,

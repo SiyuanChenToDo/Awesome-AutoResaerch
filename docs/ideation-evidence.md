@@ -140,3 +140,8 @@ graph fallback labeling and the four-role/two-round controller using synthetic
 inputs. Live smoke results must be recorded separately under ignored `projects/`.
 Scientific quality needs a same-topic/same-budget comparison and human evidence
 review; a software pass or fluent idea is insufficient.
+
+
+## ARIS / CORAL 增量接入
+
+research 配置现默认 claim_review=true，在原证据卡上提取拟议主张并逐条进行有界最近工作比较；v3 讨论改动 idea 后使用同一路径重新筛查。配置、原版 ARIS 门控、评审收据与独立的 CORAL 任务执行入口见[实际接入说明](aris-coral-runtime.md)。此前的候选级 nearest-work 路径在 claim_review=false 时保留用于对照。

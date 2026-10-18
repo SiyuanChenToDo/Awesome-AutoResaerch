@@ -21,7 +21,7 @@
 
 **Scientific Agent for Grounded Exploration** 是一个逐步建设中的模块化科研提案工作流。核心代码与提示词位于 [sage/](sage/)，来自对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。离线与联网模式使用同一控制器，通过可替换的模型和文献提供方运行。
 
-**当前状态**：提案链已通过真实 DeepSeek + arXiv 服务验证，364 项离线测试通过。新版证据提炼、共享讨论与方案交接已通过一次保留来源/候选的续跑；最终代码尚未从零重跑全部流程。Agent Laboratory 衍生的代码迭代与报告链默认不执行生成代码，真实科研实验尚未完成。详见[验证范围](docs/validation-20261018.md)。
+**当前状态**：提案链已通过真实 DeepSeek + arXiv 服务验证，389 项离线测试通过。新版证据提炼、共享讨论与方案交接已通过一次保留来源/候选的续跑；ARIS/CORAL 增量已用固定真实论文语料完成从零模型流程与受限评分执行，见[本轮验证](docs/aris-coral-validation-20261018.md)。Agent Laboratory 衍生的代码迭代与报告链默认不执行生成代码，真实科研实验尚未完成。详见[验证范围](docs/validation-20261018.md)。
 
 <a id="capabilities"></a>
 ## 从一个问题，到一份可追溯的提案
@@ -157,7 +157,7 @@ python -m sage laboratory --mode offline --discussion-mode hybrid --backend fixt
 
 详见[讨论机制与参数](docs/coi-laboratory-discussion.md)与[验证记录](docs/hybrid-validation.md)。离线测试检查数据传递、来源归属和预算；不能据此断言讨论提高科研质量。
 
-ARIS 与 CORAL 的源码比较、接入位置和验收顺序见[整合分析](docs/aris-coral-integration.md)；本次仅做设计分析，尚未接入运行。
+ARIS 的多视角构思、逐主张查新和评审收据已接入 research 提案路径；可显式调用固定原版评审门控。另有真正调用 CORAL SubprocessGrader 的独立任务入口，目前限于审查过的合成表达式简化验证，未接入编码代理池或通用科研训练。[运行入口与边界](docs/aris-coral-runtime.md) · [整体整合设计](docs/aris-coral-integration.md)
 
 ## 慢慢建设，先把每一步做实
 

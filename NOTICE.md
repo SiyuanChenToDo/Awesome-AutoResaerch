@@ -17,3 +17,10 @@ Modified for SAGE on 2026-10-17: MLESolver REPLACE/EDIT, generation, error repai
 ## CoI / Agent Laboratory hybrid discussion
 
 Added 2026-10-17: sage/discussion combines the CoI source-scoped chain-to-idea mechanism (Apache-2.0 lineage above) with Agent Laboratory PhD/Postdoc discussion and planning concepts (MIT lineage above). Maintained prompts and code use bounded JSON role exchanges, explicit citation ownership, immutable original snapshots, canonical accepted-control handoffs, and fixed prompt-version hashes. No upstream snapshot is modified or imported. These changes do not establish original behavior parity or scientific superiority.
+
+
+## ARIS / CORAL integration (2026-10-18)
+
+ARIS, MIT (c) 2026 wanshuiyin, https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep, pinned 15c0b799e6cd5fbc4da381a5786dd0bc2cdf15ee. Its idea-creator and novelty-check workflows inform the owned claim decomposition, multi-lens generation and claim-level review prompts in sage/review/claims.py and sage/ideation/. Modified to use bounded SAGE providers, supplied IDs, explicit unknown, and provider-response receipts. The optional sage/integrations/aris.py adapter executes the external original review_gate.py after source-hash verification; it does not install upstream skills. License: LICENSES/ARIS-MIT.txt.
+
+CORAL, Apache-2.0, https://github.com/Human-Agent-Society/CORAL, pinned 0123dfb939b35228cf2c1fde224cd0561e727408. The optional owned task adapter in sage/integrations/coral*.py calls the installed original SubprocessGrader and TaskGrader APIs. Original upstream code is not copied into sage/. The first owned grader supports only reviewed synthetic expression-simplification smoke scripts; the native coding-agent manager and multi-island evolution are not integrated. License: LICENSES/CORAL-Apache-2.0.txt. Neither integration establishes upstream endorsement or research superiority.

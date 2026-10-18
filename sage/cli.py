@@ -107,20 +107,31 @@ async def execute(args, config, articles):
             raise ConfigurationError('Live mode requires the optional openai package; see README live setup')
         source = paper_source_from_env(timeout=config.request_timeout_seconds)
         models = [model, cheap]
+    if getattr(args, 'paper_corpus', None):
+        from .recorded import RecordedPaperSource
+        source=RecordedPaperSource(args.paper_corpus)
+    from .integrations.aris import reviewer_from_env, ArisGate
+    reviewer = reviewer_from_env(timeout=config.request_timeout_seconds) if args.mode == 'live' and config.claim_review else None
+    if reviewer:
+        models.append(reviewer)
+    gate = ArisGate(os.environ['SAGE_ARIS_ROOT']) if config.claim_review and os.environ.get('SAGE_ARIS_ROOT') else None
     destination = output_directory(args.output)
     from .checkpoints import Checkpoint, identity
     from .runtime import Runtime
     checkpoint = Checkpoint(destination / 'checkpoint.json',
-        identity(args.topic, args.mode, config, articles, model, cheap, source),
+        identity(args.topic, args.mode, config, articles, model, cheap, source, reviewer),
         resume=getattr(args, 'resume', None))
     runtime = Runtime(model, cheap, source, config, checkpoint=checkpoint,
         cache_only_retrieval=getattr(args, 'cache_only_retrieval', False),
         allow_incomplete_novelty=getattr(args, 'allow_incomplete_novelty', False),
         retry_uncertain=getattr(args, 'retry_uncertain', False),
-        retain_rejected_responses=getattr(args, 'retain_rejected_responses', False))
+        retain_rejected_responses=getattr(args, 'retain_rejected_responses', False), reviewer_model=reviewer, aris_gate=gate)
     runtime.event('recovery.policy', 'configured',
         resumed=bool(getattr(args, 'resume', None)), cache_only_retrieval=runtime.cache_only_retrieval,
         allow_incomplete_novelty=runtime.allow_incomplete_novelty, retry_uncertain=runtime.retry_uncertain, retain_rejected_responses=runtime.retain_rejected_responses)
+    if getattr(args, 'paper_corpus', None):
+        runtime.event('retrieval.scope','recorded_corpus',corpus_sha256=source.corpus_sha256,
+                      fresh_network_search=False,provenance=source.provenance)
     try:
         result = await run(args.topic, model, source, cheap_model=cheap, config=config, mode=args.mode, articles=articles, runtime=runtime)
         save_result(destination, result, config)
@@ -185,13 +196,21 @@ async def execute_laboratory(args, config, articles):
         cheap = OpenAIModel.from_env(role='cheap', timeout=config.request_timeout_seconds)
         source = paper_source_from_env(timeout=config.request_timeout_seconds)
         models = [model, cheap]
+    if getattr(args, 'paper_corpus', None):
+        from .recorded import RecordedPaperSource
+        source=RecordedPaperSource(args.paper_corpus)
+    from .integrations.aris import reviewer_from_env, ArisGate
+    reviewer = reviewer_from_env(timeout=config.request_timeout_seconds) if args.mode == 'live' and config.claim_review else None
+    if reviewer:
+        models.append(reviewer)
+    gate = ArisGate(os.environ['SAGE_ARIS_ROOT']) if config.claim_review and os.environ.get('SAGE_ARIS_ROOT') else None
     destination = output_directory(args.output)
     atomic_json(destination / 'config.json', config.to_dict())
     atomic_json(destination / 'contract.json', __import__('dataclasses').asdict(contract))
     from .checkpoints import Checkpoint, identity
     from .runtime import Runtime
     progress = ProgressArtifacts(destination)
-    run_identity = {**identity(args.topic, args.mode, config, articles, model, cheap, source),
+    run_identity = {**identity(args.topic, args.mode, config, articles, model, cheap, source, reviewer),
                     'workflow': 'laboratory', 'contract_sha256': contract.sha256,
                     'execution_backend': args.backend, 'docker_image': args.docker_image}
     checkpoint = Checkpoint(destination / 'checkpoint.json', run_identity, resume=args.resume)
@@ -200,9 +219,12 @@ async def execute_laboratory(args, config, articles):
         allow_incomplete_novelty=args.allow_incomplete_novelty,
         retry_uncertain=args.retry_uncertain,
         retain_rejected_responses=args.retain_rejected_responses,
-        event_sink=progress.event)
+        event_sink=progress.event, reviewer_model=reviewer, aris_gate=gate)
     runtime.event('recovery.policy', 'configured', workflow='laboratory',
                   resumed=bool(args.resume), backend=args.backend)
+    if getattr(args, 'paper_corpus', None):
+        runtime.event('retrieval.scope','recorded_corpus',corpus_sha256=source.corpus_sha256,
+                      fresh_network_search=False,provenance=source.provenance)
     try:
         result = await run_laboratory(args.topic, model, source, contract=contract, cheap_model=cheap,
             config=config, mode=args.mode, articles=articles, backend=backend,
@@ -241,6 +263,12 @@ def main(argv=None):
     parser.add_argument('--version', action='version', version=f'SAGE {__version__}')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('doctor', help='Inspect local setup without network or exposing secrets')
+    coral = sub.add_parser('coral-evaluate', help='Execute a frozen reviewed task with the real CORAL grader')
+    coral.add_argument('--contract',type=Path,required=True)
+    coral.add_argument('--coral-python',type=Path,required=True)
+    coral.add_argument('--output',type=Path,required=True)
+    coral.add_argument('--allow-execution',action='store_true')
+    coral.add_argument('--approved-contract-digest',required=True)
     runner = sub.add_parser('run', help='Run the proposal pipeline with fixture or explicit live providers')
     runner.add_argument('--mode', choices=('offline', 'live'), default='offline')
     runner.add_argument('--topic', default='Synthetic SAGE offline workflow demonstration')
@@ -255,6 +283,7 @@ def main(argv=None):
     runner.add_argument('--retain-rejected-responses', action='store_true', help='Retain bounded untrusted rejected model replies privately in checkpoint, never in public audit logs')
     runner.add_argument('--retry-uncertain', action='store_true', help='Permit another paid attempt after an ambiguous in-flight checkpoint request')
     runner.add_argument('--articles', type=Path, help='Local article JSON by stable paper ID/title')
+    runner.add_argument('--paper-corpus',type=Path,help='Explicit fixed real-paper corpus; no fresh internet literature search')
     for name in ('max-chain-length', 'min-chain-length', 'max-candidates', 'max-model-calls', 'max-search-calls', 'refinement-rounds'):
         runner.add_argument('--' + name, type=int, default=None)
     runner.add_argument('--discussion-mode', choices=('none', 'hybrid'), default=None, help='Optional CoI student discussion before planning')
@@ -274,6 +303,18 @@ def main(argv=None):
     try:
         if args.command == 'doctor':
             return doctor()
+        if args.command == 'coral-evaluate':
+            from .integrations.coral import run_coral_task, validate_contract
+            from .checkpoints import digest
+            contract=validate_contract(load_json(args.contract))
+            if not args.allow_execution or args.approved_contract_digest!=digest(contract):
+                raise ConfigurationError('CORAL requires explicit execution opt-in and the exact reviewed contract digest')
+            result=run_coral_task(contract,python=args.coral_python,destination=output_directory(args.output),
+                allow_execution=args.allow_execution,approved_digest=args.approved_contract_digest)
+            print(json.dumps({'status':result['status'],'output':str(args.output),
+                'attempts':len(result['attempts']),'selected_attempt_id':result['selected_attempt_id'],
+                'usage':result['usage'],'scientific_validation':'not_performed'},indent=2))
+            return 0 if result['status']=='completed_development' else 1
         from .config import profile_overrides
         overrides = profile_overrides(args.profile)
         overrides.update(load_json(args.config) if args.config else {})

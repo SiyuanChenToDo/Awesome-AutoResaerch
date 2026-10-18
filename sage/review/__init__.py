@@ -18,6 +18,9 @@ class Review:
         self.runtime, self.discovery = runtime, discovery
 
     async def novelty(self, idea, topic):
+        if self.runtime.config.claim_review:
+            from .claims import screen_claims
+            return await screen_claims(self.runtime, self.discovery, idea, topic)
         queries, papers = [], []
         try:
             limit = self.runtime.config.max_queries

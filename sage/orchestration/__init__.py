@@ -45,7 +45,12 @@ async def run(topic, main_model, source, *, cheap_model=None, config=None, mode=
         for anchor in anchors:
             try:
                 chain = await literature.build_chain(anchor, topic)
-                result.candidates.append(await ideation.generate(chain, topic))
+                if config.claim_review:
+                    lenses = ('mechanism and falsification', 'efficiency with matched budgets', 'failure cases and robustness', 'measurement and strong baselines')
+                    candidate = await ideation.generate(chain, topic, lens=lenses[len(result.candidates) % len(lenses)])
+                else:
+                    candidate = await ideation.generate(chain, topic)
+                result.candidates.append(candidate)
                 if len(result.candidates) >= required:
                     break
             except NoEvidence as error:

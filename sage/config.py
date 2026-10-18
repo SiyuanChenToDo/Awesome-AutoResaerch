@@ -38,8 +38,13 @@ class RunConfig:
     capsule_max_chars: int = 12000
     novelty_fulltext_papers: int = 0
     citation_policy: str = 'required'
+    claim_review: bool = False
+    max_research_claims: int = 3
+    queries_per_claim: int = 2
 
     def __post_init__(self):
+        if type(self.claim_review) is not bool or type(self.max_research_claims) is not int or not 1 <= self.max_research_claims <= 5 or type(self.queries_per_claim) is not int or not 1 <= self.queries_per_claim <= 3:
+            raise ConfigurationError('Invalid claim screening limits')
         if self.discussion_mode not in ('none', 'hybrid') or self.discussion_prompt_version not in ('v1', 'v2', 'v3'):
             raise ConfigurationError('Invalid discussion mode or prompt version')
         if self.evidence_mode not in ('legacy', 'capsule') or self.paper_text_mode not in ('provided', 'arxiv'):
@@ -101,7 +106,7 @@ def profile_overrides(name):
         return {}
     if name != 'research':
         raise ConfigurationError('Unknown research profile')
-    return dict(evidence_mode='capsule', paper_text_mode='arxiv', rerank_mode='semantic',
+    return dict(claim_review=True, evidence_mode='capsule', paper_text_mode='arxiv', rerank_mode='semantic',
                 novelty_fulltext_papers=2, citation_policy='prefer',
                 novelty_search_rewrites=2, max_candidates=4, max_chain_length=5,
                 min_chain_length=3, max_queries=4, max_related=12,
