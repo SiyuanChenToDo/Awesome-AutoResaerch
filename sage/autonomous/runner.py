@@ -103,12 +103,14 @@ def prepare(destination, *, topic, aris_root, coral_python, dsh, agent_user, max
                        'tips': 'Read RESEARCH_BRIEF.md; all research decisions belong to the agent.'},
         'grader': {'entrypoint': 'sage_conjecture_grader:Grader', 'setup': [f'uv pip install --no-deps {shlex.quote(str(grader))}'],
                    'timeout': 600, 'direction': 'maximize'},
-        'agents': {'count': 1, 'runtime': 'dsh', 'model': os.environ.get('SAGE_MAIN_MODEL', 'deepseek-flash'),
+        'agents': {'count': 1, 'runtime': 'sage.autonomous.dsh_runtime:ResumableDeepSeekRuntime',
+            'model': os.environ.get('SAGE_MAIN_MODEL', 'deepseek-flash'),
             # DSH streams progress to stderr, while CORAL's stdout-only stall
             # clock falsely restarts a working headless session. The outer
             # wall deadline still bounds the entire run; crash recovery stays on.
             'isolate_user': agent_user, 'max_turns': 0, 'timeout': 0,
             'runtime_options': {'command': str(dsh), 'profile': 'headless', 'patch': str(patch),
+                                'session_state_dir': str(destination / 'session-state'),
                                 'permission_mode': 'danger-full-access', 'tools_mode': 'native'},
             'heartbeat': [{'name': 'reflect', 'every': 1}, {'name': 'pivot', 'every': 3, 'trigger': 'plateau'}],
             'research': True},
@@ -218,7 +220,7 @@ def run(args, destination):
         'if d.metadata.get("Name", "").lower() not in ("coral", "sage-conjecture-grader")})))'])
     dependency_file = destination / 'dependencies.txt'
     atomic_text(dependency_file, dependencies + '\n')
-    env = dict(os.environ, ARIS_REPO=str(aris_root), DEEPSEEK_API_KEY=key,
+    env = dict(os.environ, ARIS_REPO=str(aris_root), DEEPSEEK_API_KEY=key, PYTHONPATH=str(ROOT),
         DEEPSEEK_BASE_URL=dsh_endpoint(os.environ), SAGE_RESEARCH_TOKEN=token,
         SAGE_RESEARCH_PORT=str(server.server_port), PYTHONUNBUFFERED='1',
         SAGE_GRADER_SOCKET=str(grader_socket),

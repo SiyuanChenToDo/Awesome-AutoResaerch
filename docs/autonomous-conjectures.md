@@ -80,4 +80,14 @@ ARIS 原始跨家族门槛不改，独立接受状态保留 `REVIEW_UNAVAILABLE 
 
 DSH 将中间进度写到 stderr，当前 CORAL 的 stdout 停滞时钟会误杀仍在工作的 headless 会话，因此此入口关闭该时钟；外层总时限和原生异常退出恢复继续生效。依赖版本按已安装 CORAL 环境冻结，并可从同版本 wheel 缓存建立原生评分环境，避免重复下载和隐式升级。
 
-日志中的 `No session_id ... starting fresh` 来自原版 CORAL 的 DSH 适配器：目前 headless 接口不支持原会话续接，评估后的 reflect/pivot 续跑会新建会话。工作区文件、Wiki、评审和尝试记录保留，核心原始技能会重新加载；先前未落盘的临时对话内容不完整继承，可能造成重复阅读。它不会中止运行，但不应被解释为完整对话记忆已经恢复。
+### 原会话续接修复（2026-10-18）
+
+较早运行中的 `No session_id ... starting fresh` 来自原版 CORAL 的 DSH 适配器：它固定返回空会话 ID，也未传入恢复参数。此前把限制归于 DSH headless 本身不准确；实际安装的 DSH `0.2.0-rc.2` 已支持 `--json` 和 `--session-id`。
+
+当前入口通过 CORAL 的公开自定义 runtime 接口加载 `sage.autonomous.dsh_runtime:ResumableDeepSeekRuntime`，保留原始上游源码。适配器读取原生 `session` 事件，核对真实 ID 和工作目录，在 reflect/pivot 反馈或异常续跑时传回原 ID。DSH 自行恢复持久化消息和工具状态；新反馈提示词完整保留。外层启动器的所有 `--patch` 参数必须位于 headless 的 `--json` 参数之前。
+
+管理器在 `session-state/` 中保存绑定 agent 和绝对工作目录的明确指针，权限为目录 0700、文件 0600，放在代理工作区之外。CORAL 的通用重启校验只识别 Claude 日志时，运行器可恢复这个明确记录，不扫描“最新会话”目录。损坏、身份冲突或原生会话不存在时明确失败，不悄悄新开会话。`runtime-config/` 是管理器拥有、代理只读的模型配置目录，避免 root 写入代理可修改的 `.dsh` 路径。跨目录迁移、跨机器恢复和分支研究历史未在本次验证。
+
+公共 CORAL 日志只保留会话 ID、目录、事件类型和文本长度；不复制 `thinking` 或完整工具参数、结果。完整原生会话仍由 DSH 私有存储管理。软件验证用真实随机标识回忆、原始 CORAL SIGINT/反馈方法和未知会话拒绝来核对恢复，不把 warning 消失当作成功证明，见[续接验证](native-session-validation-20261018.md)。
+
+评审器仍在新上下文中接收对应的完整稿件与证据，不共享研究者的对话历史。修复研究代理的记忆衔接不等于提高科学评分；此前运行的原始版本和分数保留，尚未完成从同一冻结检查点出发的科研质量对照。

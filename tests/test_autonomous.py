@@ -84,7 +84,8 @@ class AutonomousTests(unittest.TestCase):
                 skill.write_text('Original skill: ' + name + '\nLiteral ${shell(example)}', encoding='utf-8')
             config = prepare(root, topic='Topic', aris_root=root / 'ARIS', coral_python=Path('/python'),
                              dsh=Path('/dsh'), agent_user='research')
-            self.assertEqual(config['agents']['runtime'], 'dsh')
+            self.assertEqual(config['agents']['runtime'], 'sage.autonomous.dsh_runtime:ResumableDeepSeekRuntime')
+            self.assertEqual(config['agents']['runtime_options']['session_state_dir'], str(root / 'session-state'))
             self.assertEqual(config['run']['session'], 'local')
             self.assertEqual(config['agents']['isolate_user'], 'research')
             self.assertEqual(config['agents']['timeout'], 0)
