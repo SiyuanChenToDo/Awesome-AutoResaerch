@@ -43,7 +43,7 @@
 
 只读审计核对了全部来源片段与原文偏移、每次批评的完整输入、评分收据与原生 Git 提交、导出文件与选中冻结版本，以及运行前后框架文件。审计通过不证明模型转述的语义正确。
 
-`No session_id ... starting fresh` 表示当前原版 CORAL/DSH 不能续接原会话，后续会新建上下文。工作区、Wiki、评审与尝试记录保留，原始技能重新提供；未落盘的临时会话内容不能完整继承。参见[运行说明](autonomous-conjectures.md)。
+本轮的 `No session_id ... starting fresh` 表示原版 CORAL 适配器未调用 DSH 已有的恢复接口，后续新建了上下文；不是 DSH 本身没有恢复能力。工作区、Wiki、评审与尝试记录保留，原始技能重新提供，未落盘的临时会话内容不能完整继承。此后已在 SAGE 接入层修复并完成[真实续接验收](native-session-validation-20261018.md)；本轮原始记录和评分没有重写。
 
 当前工程状态为 `completed_autonomous_conjectures`，科学验证为 `not_performed`，独立接受为 false。单 DeepSeek 家族的新上下文批评仍是建议，ARIS 跨家族独立门槛保留 BLOCKED。完整实验、复现和论文投稿质量不在本次已验证范围内。
 
