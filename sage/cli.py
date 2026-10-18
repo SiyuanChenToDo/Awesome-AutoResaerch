@@ -417,7 +417,8 @@ def main(argv=None):
     autonomous.add_argument('--dsh',type=Path)
     autonomous.add_argument('--agent-user',default='sage-research')
     autonomous.add_argument('--max-attempts',type=int,default=4)
-    autonomous.add_argument('--max-tools',type=int,default=160)
+    autonomous.add_argument('--max-tools',type=int,default=None,
+                            help='Shared research-tool budget; default 160 times the researcher count')
     autonomous.add_argument('--wall-seconds',type=int,default=7200)
     autonomous.add_argument('--researchers',type=int,choices=(1,2,3,4),default=4)
     autonomous.add_argument('--discussion-rounds',type=int,choices=(1,2,3),default=2)
@@ -487,6 +488,8 @@ def main(argv=None):
             return doctor()
         if args.command == 'autonomous':
             from .autonomous.runner import run as run_autonomous
+            if args.max_tools is None:
+                args.max_tools = 160 * args.researchers
             if args.max_attempts < 1 or args.max_tools < 1 or args.wall_seconds < 1:
                 raise ConfigurationError('Autonomous budgets must be positive')
             return run_autonomous(args,output_directory(args.output))

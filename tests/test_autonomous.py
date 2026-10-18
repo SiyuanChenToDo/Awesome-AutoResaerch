@@ -118,6 +118,16 @@ class AutonomousTests(unittest.TestCase):
         errors = candidate_errors(item, {'p1': {}, 'p2': {}}, {'p1': {'claims': [1]}})
         self.assertTrue(any('Rejected candidates' in x for x in errors))
 
+    def test_cli_scales_only_the_default_shared_budget_with_team_size(self):
+        from unittest.mock import patch
+        from sage.cli import main
+        for options, expected in (([], 640), (['--researchers','1'], 160),
+                                  (['--researchers','4','--max-tools','240'], 240)):
+            with self.subTest(options=options), tempfile.TemporaryDirectory() as folder:
+                with patch('sage.autonomous.runner.run', return_value=0) as run:
+                    self.assertEqual(main(['autonomous','--output', str(Path(folder) / 'run'), *options]), 0)
+                    self.assertEqual(run.call_args.args[0].max_tools, expected)
+
 
 if __name__ == '__main__':
     unittest.main()

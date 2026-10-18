@@ -21,7 +21,7 @@
 
 **Scientific Agent for Grounded Exploration** 是一个科研猜想发现与证据工作台。新增原生自主入口使用 [CORAL](https://github.com/Human-Agent-Society/CORAL) 管理 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，加载 [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 研究技能，自行调研、提出猜想、查新、批评和修订。既有模块化提案、实验与写作代码位于 [sage/](sage/)，包含对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。
 
-**当前软件验证**：508 项离线测试已在 AutoDL Linux 和 Windows 通过（Windows 跳过 3 项 Unix 专用权限检查）。原生 DSH 会话续接已修复并完成真实恢复验收，见[续接验证](docs/native-session-validation-20261018.md)。此前 Flash 的 run-10 完成了单主研究者自主猜想闭环，见[实际验证与未解决问题](docs/native-conjecture-validation-20261018.md)；新的四研究者团队验证已启动，尚未完成互评、修订与综合闭环。运行方式和单 API 边界见[自主猜想发现](docs/autonomous-conjectures.md)。调用完成、团队过程完成、模型分数与科学结论成立分别记录。
+**当前软件验证**：509 项离线测试已在 AutoDL Linux 和 Windows 通过（Windows 跳过 3 项 Unix 专用权限检查），包含随后修复的团队默认工具预算。原生 DSH 会话续接已修复并完成真实恢复验收，见[续接验证](docs/native-session-validation-20261018.md)。四研究者、两轮互评的真实团队闭环已完成：4 份初稿、8 次互评、8 次修订、2 版综合和 2 次正式评分，167 项产物完整性检查通过，见[团队运行验证与边界](docs/native-team-validation-20261018.md)。此前 run-10 是[单主研究者历史运行](docs/native-conjecture-validation-20261018.md)。团队过程完成不证明科研质量提高，产物仍是待实验与独立复核的猜想。
 
 **历史验证范围**：较早的 `sage closed-loop` 使用固定真实论文语料和固定符号回归程序，完成了开发、确认、统计、报告和反算核对。它验证子实验的工程连接，不能当作全自主科研的证明。详见[闭环验证](docs/closed-loop-validation-20261018.md)、[写作修复验证](docs/writing-validation-20261018.md)与[较早的接入验证](docs/aris-coral-validation-20261018.md)。
 

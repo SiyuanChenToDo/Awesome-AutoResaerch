@@ -45,7 +45,7 @@ DSH 固定为一致发行的 `0.2.0-rc.2`。其 Messages 接口使用 `https://a
 
 可通过 `--researchers 1` 使用单研究者流程，或设置 `--researchers 2/3/4` 和 `--discussion-rounds 1/2/3`。多研究者只用 slot 0 执行 `coral eval`，其他研究者通过团队工具交换冻结提案、批评和修订。
 
-默认 4 次 CORAL 正式提交、160 次研究工具调用、2 小时总时限，由整个研究团队共享。它们用于防止失控运行，不是每节字数、候选篇幅或科研内容的压缩规则；可以调整 `--max-attempts`、`--max-tools`、`--wall-seconds`。多研究者会增加实际模型调用量，需要按研究范围配置预算；原生 DSH 的各研究者调用和重试另有自己的记录，不能把研究工具次数当作总 API 调用数或费用上限。
+默认 4 次 CORAL 正式提交、2 小时总时限；研究工具共享额度默认为 `160 × 研究者数`，默认四人为 640 次、单人为 160 次。显式 `--max-tools` 始终表示团队总额度，不再乘人数。本轮四人运行实际用了 205 次工具调用，原先单人额度不能直接作为四人的默认额度。可以调整 `--max-attempts`、`--max-tools`、`--wall-seconds`；它们用于约束运行，不是科研内容或每节篇幅的压缩规则。各研究者的原生 DSH 调用和重试另有自己的记录，研究工具次数不能当作总 API 调用数或费用上限。
 
 安装记录在 `$SAGE_NATIVE_HOME/runtime.json`，默认 `~/.cache/sage/native/runtime.json`。已有环境可显式指定 `--coral-python`、`--aris-root`、`--dsh`。研究主进程也需能导入 openai、pypdf；可使用安装目录 `python/bin/python` 运行本仓库。部署脚本采用 pnpm，避免观察到的 npm 对 DSH 预发布依赖循环解析问题。
 
