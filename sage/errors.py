@@ -61,6 +61,7 @@ _VALIDATION_RULES = {
     'required_tag': 'Return exactly one nonempty required output tag.',
     'unspecified': 'Output failed validation; follow the original contract without inventing a diagnosis.',
     'bounded_commentary': 'Return one concise qualitative paragraph within 1400 characters; preserve uncertainty and do not invent facts to fit.',
+    'manuscript_prose': 'Return the actual rewritten manuscript paragraph, not editing instructions, a review reply, or advice to the author. Replace directives such as Clarify the abstract or Separate the proposal with the final prose itself.',
     'bounded_ranking_reason': 'Each raw ranking reason must be at most 1200 characters; the controller preserves full text and creates a marked 180-character preview. Preserve all supplied IDs and numeric scores.',
     'source_excerpt': 'Copy a contiguous 15-280 character quote only from INPUT_CHUNK, not from metadata or another chunk. Keep claims <=350 characters and the exact supplied chunk_id; omit unsupported claims.',
     'canonical_requirements_managed': 'Return requirements=[] in v3. The controller attaches exact approved requirements from selected accepted_critique_ids.',

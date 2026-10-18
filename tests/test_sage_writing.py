@@ -78,6 +78,28 @@ class WritingTests(unittest.IsolatedAsyncioTestCase):
         report, runtime = await self.run_report(refinement_rounds=0)
         self.assertEqual(report['revision_history'], [])
         self.assertEqual(runtime.usage['model_calls'], 10)
+        self.assertEqual(report['draft_readiness'],'revision_required')
+        self.assertIn('Draft readiness: revision',report['draft_markdown'])
+
+    async def test_directive_revision_is_rejected_without_replacing_real_prose(self):
+        directives=[{'section_id':'abstract','commentary':'Clarify the executed-vs-proposed split so the abstract does not imply a completed study.','citation_ids':[]}]
+        reply='<edits>'+json.dumps(directives)+'</edits>'
+        model=FixtureReportModel(overrides={'writing.revise':[reply,reply]})
+        report,runtime=await self.run_report(model=model)
+        self.assertEqual(report['status'],'partial')
+        self.assertEqual(report['draft_readiness'],'incomplete')
+        self.assertFalse(report['revision_history'][0]['accepted'])
+        self.assertNotIn('Clarify the executed',report['draft_markdown'])
+        errors=[e for e in runtime.audit if e['status']=='validation_rejected']
+        self.assertEqual(errors[-1]['validation']['rule'],'manuscript_prose')
+
+    async def test_completed_workflow_exposes_unresolved_reviewer_request(self):
+        fixed=fixture_responses()['review.report']
+        model=FixtureReportModel(overrides={'review.report':[fixed]*4})
+        report,_=await self.run_report(model=model)
+        self.assertEqual(report['status'],'completed')
+        self.assertEqual(report['draft_readiness'],'revision_required')
+        self.assertTrue(report['model_review']['requires_revision'])
 
     async def test_no_model_prose_or_invented_numeric_claim_can_enter_markdown(self):
         baseline, _ = await self.run_report(refinement_rounds=0)
@@ -218,6 +240,13 @@ class WritingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ReportParsingTests(unittest.TestCase):
+    def test_observed_directives_rejected_but_descriptive_pilot_prose_retained(self):
+        for value in ('Clarify the abstract so it does not imply calibration was run.',
+                      'Separate the pre-registered design proposal from what the bounded experiment actually executed.',
+                      'Reframe the abstract to avoid a validation claim.'):
+            with self.assertRaises(InvalidResponse):parse_section({'commentary':value,'citation_ids':[]},set())
+        value='We evaluate the implemented pilot and retain the unexecuted calibration program as future work.'
+        self.assertEqual(parse_section({'commentary':value,'citation_ids':[]},set())['commentary'],value)
     def test_review_scores_are_strict_and_separate_from_experiment_metrics(self):
         value = review_payload()
         value['ratings'] = dict(RANGES)

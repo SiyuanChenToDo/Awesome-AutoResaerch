@@ -21,7 +21,7 @@
 
 **Scientific Agent for Grounded Exploration** 是一个逐步建设中的模块化科研提案工作流。核心代码与提示词位于 [sage/](sage/)，来自对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。离线与联网模式使用同一控制器，通过可替换的模型和文献提供方运行。
 
-**当前状态**：397 项离线测试通过。新增 `sage closed-loop` 已用真实 DeepSeek、固定真实论文语料、共享讨论、原版 ARIS 门控和原生 CORAL 训练评价完成一次有界实验闭环：两轮开发、一次新种子确认、统计、写作与保存后反算核对。它验证固定符号回归子实验的工程连接，不代表完整生成方案、论文规模实验或科学有效性已经完成。见[闭环入口](docs/closed-loop-runtime.md)与[闭环验证范围](docs/closed-loop-validation-20261018.md)。较早的[提案验证](docs/validation-20261018.md)和[接入验证](docs/aris-coral-validation-20261018.md)保留历史边界。
+**当前状态**：407 项离线测试通过。`sage closed-loop` 已用真实 DeepSeek、固定真实论文语料、共享讨论、原版 ARIS 门控和原生 CORAL 训练评价完成一次有界实验闭环：两轮开发、一次新种子确认、统计、写作与保存后反算核对。它验证固定符号回归子实验的工程连接，不代表完整生成方案、论文规模实验或科学有效性已经完成。新增写作续跑核对原始实验后独立重写正文，并显式区分调用完成与草稿仍待修订，见[写作修复验证](docs/writing-validation-20261018.md)、[闭环入口](docs/closed-loop-runtime.md)与[闭环验证范围](docs/closed-loop-validation-20261018.md)。较早的[提案验证](docs/validation-20261018.md)和[接入验证](docs/aris-coral-validation-20261018.md)保留历史边界。
 
 <a id="capabilities"></a>
 ## 从一个问题，到一份可追溯的提案

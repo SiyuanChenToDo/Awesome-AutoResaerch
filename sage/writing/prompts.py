@@ -53,6 +53,9 @@ All model prose is unverified and retained in JSON for human review; it is not r
 as factual Markdown. Recorded metrics are rendered independently from the attempt ledger.
 Do not fabricate citations, datasets, hardware, confidence intervals or scientific conclusions.
 Do not request tools, issue commands, output private reasoning, or claim independent review.
+Write actual manuscript paragraphs in the authors' voice. Never put editing instructions,
+review replies, a to-do list, or advice to the author in commentary. For example, do not
+write "Clarify the abstract so it..."; write the replacement abstract itself.
 """
 
 
@@ -76,8 +79,12 @@ Previously generated section outline (full prose is reviewed together later): {j
 def revision_prompt(context, sections, review):
     # PaperSolver.solve and PaperEdit: edits to a current draft following scoring.
     return POLICY + f'''Revise designated sections in response to this unverified model review.
-Return <edits> with a JSON array of replacements, each with section_id, commentary and
-citation_ids, then </edits>. Use each existing section at most once. An empty array is
+Return <edits> with a JSON array of FINAL REPLACEMENT PARAGRAPHS, each with exactly
+section_id, commentary and citation_ids, then </edits>. No status or other keys.
+commentary must be the rewritten manuscript text ready to replace that section,
+not instructions such as "Clarify...", "Reframe...", "Separate the proposal...", or
+"Add that...". Do not describe how a future writer should revise the text.
+Use each existing section at most once. An empty array is
 allowed when no responsible revision is possible. Preserve all recorded failures and
 uncertainty; edits cannot change observations, references, the evaluator or permissions.
 Each commentary must stay within {MAX_COMMENTARY_CHARS} characters and 160 words.

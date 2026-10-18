@@ -46,3 +46,14 @@ python -m sage closed-loop \
 - `closure-checks.json`、`manifest.json`、`reflection.md`：连接检查、文件哈希和下一步。哈希不是第三方时间认证，自动检查不是独立科学复核。
 
 `completed_closed_loop` 表示该范围内的端到端执行完成。研究结论可以是 `not_supported`，新颖性也可以未确立；不代表论文规模实验完成或方法优越。
+
+## 写作续跑
+
+```bash
+python -m sage write-report --input-run projects/completed-closed-loop \
+  --output projects/new-writing-run --allow-live
+```
+
+该入口先核对父运行全部 manifest 文件、策略/方案/评分绑定与评分程序哈希，并重算已有统计。通过后才调用模型写作，不重新训练或启动最终测试。新报告保留父实验源码身份和当前写作源码身份；父运行及失败历史保持原样。
+
+修订必须返回实际替换段落，不能返回给作者的编辑指令。`status=completed` 仅表示有界调用链结束；另看 `draft_readiness`：`revision_required`、`draft_for_human_review` 或 `incomplete`。启发式文本检查不保证语义正确。模型草稿附上程序从原始分析生成的结果表及实现说明，模型正文继续标为未独立核实。

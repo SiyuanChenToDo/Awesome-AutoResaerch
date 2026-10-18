@@ -296,6 +296,45 @@ async def execute_closed_loop(args, config):
             if provider is not None: await provider.aclose()
 
 
+async def execute_write_report(args):
+    from .writing.continuation import prepare_report_inputs
+    from .writing import generate_report
+    from .checkpoints import Checkpoint, code_version, digest, provider_identity
+    from .runtime import Runtime
+    from .providers import OpenAIModel
+    if not args.allow_live: raise ConfigurationError('Writing requires explicit --allow-live')
+    proposal,execution,lineage=prepare_report_inputs(args.input_run)
+    config=RunConfig(max_model_calls=40,max_tokens_per_call=4000,max_reserved_output_tokens=160000,
+                     max_wall_seconds=900,max_prompt_chars=200000,refinement_rounds=2)
+    destination=output_directory(args.output)
+    atomic_json(destination/'lineage.json',lineage);atomic_json(destination/'config.json',config.to_dict())
+    model=OpenAIModel.from_env(role='main',timeout=config.request_timeout_seconds)
+    cheap=OpenAIModel.from_env(role='cheap',timeout=config.request_timeout_seconds)
+    source=FixtureSource()  # generate_report has no discovery/retrieval calls.
+    checkpoint=Checkpoint(destination/'checkpoint.json',{'workflow':'write-report',
+        'writer_code_sha256':code_version(),'input_sha256':digest(lineage),
+        'providers':[provider_identity(model),provider_identity(cheap)]})
+    runtime=Runtime(model,cheap,source,config,checkpoint=checkpoint,retain_rejected_responses=True)
+    runtime.event('writing.input','verified_frozen_experiment',**lineage)
+    try:
+        report=await generate_report(runtime,proposal,execution,
+            on_progress=lambda value:atomic_json(destination/'report.partial.json',value))
+        report['lineage']=lineage;report['writer_code_sha256']=code_version()
+        report['writing_providers']={'main':provider_identity(model),'cheap':provider_identity(cheap)}
+        report['usage']=dict(runtime.usage)
+        atomic_json(destination/'report.json',report)
+        atomic_text(destination/'report.md',report['markdown'])
+        atomic_text(destination/'draft.md',report['draft_markdown'])
+        atomic_json(destination/'artifact-manifest.json',{p.name:{'bytes':p.stat().st_size,
+            'sha256':__import__('hashlib').sha256(p.read_bytes()).hexdigest()}
+            for p in sorted(destination.iterdir()) if p.is_file()})
+        print(json.dumps({'status':report['status'],'draft_readiness':report['draft_readiness'],
+            'output':str(destination),'usage':report['usage'],'new_training_runs':0,'new_final_test_accesses':0},indent=2))
+        return 0 if report['status'].startswith('completed') else 1
+    finally:
+        await model.aclose();await cheap.aclose()
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     # Keep the original catalog/project commands and their tests as compatibility APIs.
@@ -353,10 +392,16 @@ def main(argv=None):
     closed.add_argument('--allow-live',action='store_true')
     closed.add_argument('--allow-execution',action='store_true')
     closed.add_argument('--approved-protocol-digest',required=True)
+    writer=sub.add_parser('write-report',help='Verify a saved closed-loop run and generate a fresh report without rerunning experiments')
+    writer.add_argument('--input-run',type=Path,required=True)
+    writer.add_argument('--output',type=Path,required=True)
+    writer.add_argument('--allow-live',action='store_true')
     args = parser.parse_args(argv)
     try:
         if args.command == 'doctor':
             return doctor()
+        if args.command == 'write-report':
+            return asyncio.run(execute_write_report(args))
         if args.command == 'coral-evaluate':
             from .integrations.coral import run_coral_task, validate_contract
             from .checkpoints import digest

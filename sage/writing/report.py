@@ -89,6 +89,10 @@ def parse_section(value, reference_ids):
         raise InvalidResponse('Report commentary is missing')
     if len(section['commentary']) > MAX_COMMENTARY_CHARS:
         raise ValidationError('bounded_commentary', 'commentary')
+    # Narrow form check for the concrete failure observed in a real revision.
+    # This does not certify prose quality, entailment, or numerical truth.
+    if re.match(r'(?is)^\s*(?:clarify|reframe|correct|rewrite|revise|align|rename)\s+(?:the\s+)?(?:abstract|manuscript|draft|section|description|results|setup)\b|^\s*separate\s+the\s+(?:pre-registered\s+)?(?:design\s+)?proposal\s+from\b|^\s*clarify\s+the\s+executed-vs-proposed\s+split\b',section['commentary']):
+        raise ValidationError('manuscript_prose','commentary')
     citations = section['citation_ids']
     if not isinstance(citations, list) or len(citations) > len(reference_ids) or any(not isinstance(x, str) or x not in reference_ids for x in citations):
         raise InvalidResponse('Report cites an unsupported source')
@@ -257,6 +261,7 @@ def render_draft_markdown(report):
              'or invented. Verify them against the separate deterministic evidence report '
              'and original supplied sources before use. This is not a validated manuscript '
              'or permission to publish.', '']
+    lines += ['Draft readiness: '+_text(report.get('draft_readiness','not_assessed'))+'.', '']
     if report['dry_run']:
         lines += ['DRY RUN: no experiment was executed; this draft cannot establish measured results.', '']
     if report['fixture'] or report['proposal_fixture']:
@@ -280,6 +285,26 @@ def render_draft_markdown(report):
                   f'Reading scope: {_text(reference["evidence_scope"])}.']
     if not report['references']:
         lines += ['No supplied sources are available.']
+    if report.get('research_analysis'):
+        details=report.get('research_details',{})
+        if details:
+            lines += ['', '## Recorded implementation appendix', '',
+                      'Controller-authored implementation notes and frozen configuration.', '']
+            for key in ('selected_policy','functions','split_sizes','operators','inputs','search','hash','gate','exact_probe','semantic_audit','selection','unexecuted_controls'):
+                if key in details:
+                    value=json.dumps(details[key],ensure_ascii=False) if isinstance(details[key],(dict,list)) else details[key]
+                    lines += ['- '+_text(key)+': '+_text(value)]
+            for key in ('population','generations','development_seeds','confirmation_seeds'):
+                if key in report['contract']:
+                    lines += ['- '+_text(key)+': '+_text(json.dumps(report['contract'][key]))]
+        # The numerical appendix is controller rendered from recorded analysis,
+        # never copied from or inferred out of model prose.
+        facts=render_markdown(report)
+        marker='## Bounded heldout experiment\n'
+        if marker in facts:
+            lines += ['', '## Recorded measurement appendix', '',
+                      'Controller-rendered data from the frozen experiment; separate from unverified prose.', '',
+                      facts.split(marker,1)[1]]
     return '\n'.join(lines) + '\n'
 
 
@@ -345,6 +370,8 @@ async def generate_report(runtime, proposal: dict, execution: dict, *, on_progre
                                  'PaperSolver.solve', 'PaperSolver.process_command', 'agents.get_score']}
     if execution.get('research_analysis') is not None:
         report['research_analysis']=deepcopy(execution['research_analysis'])
+    if execution.get('research_details') is not None:
+        report['research_details']=deepcopy(execution['research_details'])
     report['sections'] = [{'section_id': name, 'title': TITLES[name], 'commentary': '',
                            'citation_ids': [], 'claim_status': 'unverified_model_commentary',
                            'rendered_in_markdown': False, 'status': 'not_generated'} for name in SECTIONS]
@@ -356,6 +383,9 @@ async def generate_report(runtime, proposal: dict, execution: dict, *, on_progre
                'scientific_validation': 'not_performed'}
     if 'research_analysis' in report:
         context['research_analysis']=report['research_analysis']
+    if 'research_details' in report:
+        context['research_details']=report['research_details']
+        context['writing_priority']='Describe the executed pilot in actual prose. Discuss unexecuted proposal controls only as future work and limitations; never turn them into completed methods.'
     stage = 'writing.scaffold'
     try:
         def validate_scaffold(values):
@@ -413,6 +443,11 @@ async def generate_report(runtime, proposal: dict, execution: dict, *, on_progre
             report['revision_history'][-1]['status'] = 'failed_previous_draft_preserved'
         runtime.event('writing.report', report['status'], error_code=error.code)
     report['markdown'] = render_markdown(report)
+    # Completion describes a bounded software workflow, not manuscript readiness.
+    # Keep an unresolved reviewer request visible even when the call chain ended.
+    review=report.get('model_review')
+    report['draft_readiness']=('incomplete' if not report['status'].startswith('completed') else
+        ('revision_required' if review is None or review.get('requires_revision') else 'draft_for_human_review'))
     report['draft_markdown'] = render_draft_markdown(report)
     if on_progress:
         on_progress(report)
