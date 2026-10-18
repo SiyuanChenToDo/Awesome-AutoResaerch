@@ -95,6 +95,8 @@ Run `python scripts/check.py` for the full offline regression suite. Those tests
 
 ## Explicit coverage, not upstream parity
 
+2026-10-18 writing update: [`sage write-paper`](full-manuscript.md) now generates full manuscript prose, mathematical notation, checked bibliography references, measured table/figure assets, whole-paper reviews and section replacements, then emits LaTeX and Markdown. This supersedes the initial short-writing limitation described below. Compilation is performed separately with a local engine/editor, not by executing model commands. Upstream source snapshots remain unchanged.
+
 This is a first mechanism-level integration. It does not reproduce the complete original Agent Laboratory application.
 
 | Area | Coverage |

@@ -60,16 +60,17 @@ _VALIDATION_RULES = {
     'requirements_coverage': 'Include exactly one planning requirement per accepted critique.',
     'required_tag': 'Return exactly one nonempty required output tag.',
     'unspecified': 'Output failed validation; follow the original contract without inventing a diagnosis.',
-    'bounded_commentary': 'Return one concise qualitative paragraph within 1400 characters; preserve uncertainty and do not invent facts to fit.',
+    'bounded_commentary': 'Response exceeds the transport envelope. Split the manuscript into subsections without discarding evidence or compressing the argument.',
     'manuscript_prose': 'Return the actual rewritten manuscript paragraph, not editing instructions, a review reply, or advice to the author. Replace directives such as Clarify the abstract or Separate the proposal with the final prose itself.',
     'bounded_ranking_reason': 'Each raw ranking reason must be at most 1200 characters; the controller preserves full text and creates a marked 180-character preview. Preserve all supplied IDs and numeric scores.',
     'source_excerpt': 'Copy a contiguous 15-280 character quote only from INPUT_CHUNK, not from metadata or another chunk. Keep claims <=350 characters and the exact supplied chunk_id; omit unsupported claims.',
+    'source_span_id': 'Select only passage IDs present in INPUT_PASSAGES. Do not invent IDs or copy quotations. Return exactly one <capsule> JSON tag with category, claim and span_ids per claim.',
     'canonical_requirements_managed': 'Return requirements=[] in v3. The controller attaches exact approved requirements from selected accepted_critique_ids.',
 }
 _VALIDATION_FIELDS = frozenset(('$', 'discussion', 'experiment', 'plan_contract', 'idea', 'commentary',
     'status', 'evidence_ids', 'accepted_critique_ids', 'rejected_critique_ids', 'selected_index',
     'requirements', 'critique_id', 'requirement', 'rationale', 'uncertainty', 'issue',
-    'requested_change', 'support', 'reason', 'quote', 'queries'))
+    'requested_change', 'support', 'reason', 'quote', 'queries', 'span_ids'))
 
 
 class ValidationError(InvalidResponse):

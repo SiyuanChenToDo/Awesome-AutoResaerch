@@ -289,8 +289,8 @@ class OpenAIModel:
         return self._client
 
     async def complete(self, stage: str, prompt: str, *, max_tokens: int) -> str:
-        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 250_000:
-            raise ConfigurationError("Model prompt must contain 1 to 250000 characters")
+        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1_000_000:
+            raise ConfigurationError("Model prompt must contain 1 to 1000000 characters")
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 65_536:
             raise ConfigurationError("max_tokens must be an integer from 1 to 65536")
         client = self._get_client()
@@ -328,7 +328,11 @@ class OpenAIModel:
             raise InvalidResponse("Model provider returned an invalid completion") from None
         if finish_reason == "length":
             from .errors import TruncatedResponse
-            raise TruncatedResponse("Model completion reached output limit")
+            error = TruncatedResponse("Model completion reached output limit")
+            # Private checkpoint retention is opt-in at Runtime. Never log this
+            # text or promote an incomplete answer to a validated result.
+            error.partial_response = content if isinstance(content, str) else None
+            raise error
         if refusal or (finish_reason is not None and finish_reason != "stop"):
             raise InvalidResponse("Model provider returned a refused, incomplete, or non-text completion")
         if not isinstance(content, str) or not content.strip() or len(content) > 1_000_000:

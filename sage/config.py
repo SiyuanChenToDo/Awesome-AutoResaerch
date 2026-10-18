@@ -55,7 +55,7 @@ class RunConfig:
             raise ConfigurationError('Invalid citation policy')
         bounds = {'novelty_search_rewrites': (0, 4), 'capsule_chunk_chars': (1000, 16000),
                   'capsule_max_chunks': (1, 20), 'capsule_max_claims': (1, 40),
-                  'capsule_max_chars': (2000, 30000), 'novelty_fulltext_papers': (0, 5)}
+                  'capsule_max_chars': (2000, 120000), 'novelty_fulltext_papers': (0, 5)}
         for name, (low, high) in bounds.items():
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:

@@ -335,6 +335,70 @@ async def execute_write_report(args):
         await model.aclose();await cheap.aclose()
 
 
+async def execute_write_paper(args):
+    from .writing.continuation import prepare_report_inputs
+    from .writing.manuscript import generate_manuscript, render_manuscript, validate_bundle
+    from .checkpoints import Checkpoint, code_version, digest, provider_identity
+    from .runtime import Runtime
+    from .providers import OpenAIModel
+    if not args.allow_live: raise ConfigurationError('Writing requires explicit --allow-live')
+    _, execution, lineage = prepare_report_inputs(args.input_run)
+    bundle = json.loads(args.evidence.read_text(encoding='utf-8'))
+    validate_bundle(bundle)
+    # Bind the numerical evidence to the verified execution; supplementary
+    # research is a separate, explicitly supplied provenance-bearing record.
+    if bundle['evidence'].get('original_analysis') != execution['research_analysis']:
+        raise ConfigurationError('Manuscript evidence differs from verified experiment analysis')
+    if bundle.get('lineage') != lineage:
+        raise ConfigurationError('Manuscript evidence lineage differs from verified experiment')
+    defaults = dict(max_model_calls=120, max_tokens_per_call=32768,
+                    max_reserved_output_tokens=3932160, max_wall_seconds=7200,
+                    request_timeout_seconds=300, max_prompt_chars=250000,
+                    max_response_chars=250000,refinement_rounds=1)
+    if args.config: defaults.update(json.loads(args.config.read_text(encoding='utf-8')))
+    config = RunConfig(**defaults)
+    destination = output_directory(args.output)
+    # Assets are supplied separately and copied before rendering. They are
+    # never interpreted as model commands or shell arguments.
+    import shutil
+    for assets in bundle.get('assets', {}).values():
+        for asset in assets:
+            name = asset['path']; rel = Path(name)
+            if rel.is_absolute() or '..' in rel.parts or rel.suffix not in ('.tex','.pdf','.png'):
+                raise ConfigurationError('Invalid supplied asset path')
+            source_asset = args.evidence.parent / rel
+            if not source_asset.resolve().is_relative_to(args.evidence.parent.resolve()) or source_asset.is_symlink():
+                raise ConfigurationError('Asset escapes evidence directory')
+            (destination / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_asset, destination / rel)
+    atomic_json(destination/'evidence.json',bundle)
+    atomic_json(destination/'lineage.json',lineage)
+    atomic_json(destination/'config.json',config.to_dict())
+    model=OpenAIModel.from_env(role='main',timeout=config.request_timeout_seconds)
+    cheap=OpenAIModel.from_env(role='cheap',timeout=config.request_timeout_seconds)
+    checkpoint=Checkpoint(destination/'checkpoint.json',{'workflow':'write-paper',
+        'writer_code_sha256':code_version(),'input_sha256':digest({'bundle':bundle,'config':config.to_dict()}),
+        'providers':[provider_identity(model),provider_identity(cheap)]},resume=args.resume)
+    runtime=Runtime(model,cheap,FixtureSource(),config,checkpoint=checkpoint,retain_rejected_responses=True,
+                    retry_uncertain=args.retry_uncertain)
+    runtime.event('manuscript.input','verified_frozen_experiment',**lineage)
+    try:
+        report=await generate_manuscript(runtime,bundle,
+            on_progress=lambda value:atomic_json(destination/'manuscript.partial.json',value))
+        report['lineage']=lineage
+        report['writer_code_sha256']=code_version()
+        report['writing_providers']={'main':provider_identity(model),'reviewer':provider_identity(model)}
+        render_manuscript(report,bundle,destination)
+        atomic_json(destination/'artifact-manifest.json',{str(p.relative_to(destination)).replace('\\','/'):
+            {'bytes':p.stat().st_size,'sha256':__import__('hashlib').sha256(p.read_bytes()).hexdigest()}
+            for p in sorted(destination.rglob('*')) if p.is_file()})
+        print(json.dumps({'completeness':report['completeness'],'readiness':report['readiness'],
+            'main_text_words':report['main_text_words'],'usage':report['usage'],'output':str(destination)},indent=2))
+        return 0 if report['completeness']=='full_draft' else 1
+    finally:
+        await model.aclose();await cheap.aclose()
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     # Keep the original catalog/project commands and their tests as compatibility APIs.
@@ -344,6 +408,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='sage', description='SAGE — Scientific Agent for Grounded Exploration')
     parser.add_argument('--version', action='version', version=f'SAGE {__version__}')
     sub = parser.add_subparsers(dest='command', required=True)
+    autonomous=sub.add_parser('autonomous',help='Native CORAL + ARIS + DeepSeek: autonomous evidence-scoped conjecture discovery')
+    autonomous.add_argument('--output',type=Path,required=True)
+    autonomous.add_argument('--topic',default='')
+    autonomous.add_argument('--allow-live',action='store_true')
+    autonomous.add_argument('--coral-python',type=Path)
+    autonomous.add_argument('--aris-root',type=Path)
+    autonomous.add_argument('--dsh',type=Path)
+    autonomous.add_argument('--agent-user',default='sage-research')
+    autonomous.add_argument('--max-attempts',type=int,default=4)
+    autonomous.add_argument('--max-tools',type=int,default=160)
+    autonomous.add_argument('--wall-seconds',type=int,default=7200)
     sub.add_parser('doctor', help='Inspect local setup without network or exposing secrets')
     coral = sub.add_parser('coral-evaluate', help='Execute a frozen reviewed task with the real CORAL grader')
     coral.add_argument('--contract',type=Path,required=True)
@@ -392,7 +467,15 @@ def main(argv=None):
     closed.add_argument('--allow-live',action='store_true')
     closed.add_argument('--allow-execution',action='store_true')
     closed.add_argument('--approved-protocol-digest',required=True)
-    writer=sub.add_parser('write-report',help='Verify a saved closed-loop run and generate a fresh report without rerunning experiments')
+    paper=sub.add_parser('write-paper',help='Generate and revise a full manuscript with verified evidence, bibliography and assets')
+    paper.add_argument('--input-run',type=Path,required=True)
+    paper.add_argument('--evidence',type=Path,required=True)
+    paper.add_argument('--output',type=Path,required=True)
+    paper.add_argument('--config',type=Path)
+    paper.add_argument('--resume',type=Path,help='Matching checkpoint from a prior output directory; spent requests remain counted')
+    paper.add_argument('--retry-uncertain',action='store_true')
+    paper.add_argument('--allow-live',action='store_true')
+    writer=sub.add_parser('write-report',help='Compatibility evidence-ledger report; use write-paper for a full manuscript')
     writer.add_argument('--input-run',type=Path,required=True)
     writer.add_argument('--output',type=Path,required=True)
     writer.add_argument('--allow-live',action='store_true')
@@ -400,6 +483,13 @@ def main(argv=None):
     try:
         if args.command == 'doctor':
             return doctor()
+        if args.command == 'autonomous':
+            from .autonomous.runner import run as run_autonomous
+            if args.max_attempts < 1 or args.max_tools < 1 or args.wall_seconds < 1:
+                raise ConfigurationError('Autonomous budgets must be positive')
+            return run_autonomous(args,output_directory(args.output))
+        if args.command == 'write-paper':
+            return asyncio.run(execute_write_paper(args))
         if args.command == 'write-report':
             return asyncio.run(execute_write_report(args))
         if args.command == 'coral-evaluate':

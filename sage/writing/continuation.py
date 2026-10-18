@@ -59,7 +59,7 @@ def prepare_report_inputs(directory):
         if analyze(measurements,bootstrap_repeats=contract['bootstrap_repeats'])!=analysis: raise ValueError
     except (KeyError,TypeError,ValueError,OSError):
         raise ConfigurationError('Saved experiment integrity or supported-evaluator check failed; no model calls made') from None
-    details={'writing_scope':'executed_bounded_pilot',
+    details={'writing_scope':'full_manuscript_from_recorded_research',
         'authority':'Frozen execution contract and saved measurements describe what ran; free-text proposals describe unexecuted ambitions.',
         'selected_policy':policy,
         'functions':{'polynomial':'x + x*x + x*x*x','trigonometric':'sin(x) + sin(x*x+x)',
@@ -75,7 +75,7 @@ def prepare_report_inputs(directory):
         'penalties':{'size_penalty_small':.001,'size_penalty_large':.01},
         'selection':'Within each run, choose a generation champion using validation MSE. Between two policy attempts, choose highest mean development validation R2 for probe_verified before the sole confirmation grid.',
         'unexecuted_controls':['calibration false-positive sweeps','matched random-rejection control','collision-floor go/no-go program','external-dataset paper-scale reproduction'],
-        'claim_boundary':'Write an internal pilot report. Do not describe proposed extra controls as performed, or claim novelty, causal attribution, equivalence, adequate power or independent validation.'}
+        'claim_boundary':'Write a complete research manuscript. Distinguish executed evidence from proposed controls. Establish each contribution with its evidence; do not assert unsupported novelty, causal attribution, global equivalence, adequate power or independent replication.'}
     execution={'status':'completed_bounded_experiment','fixture':False,'dry_run':False,
         'contract':contract,'contract_digest':digest(contract),'selected_attempt_id':selection['selected_attempt_id'],
         'research_analysis':analysis,'research_details':details,

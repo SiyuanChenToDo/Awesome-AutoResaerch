@@ -327,7 +327,7 @@ class ModelTests(unittest.IsolatedAsyncioTestCase):
         for tokens in (0, -1, 65_537, True, "100"):
             with self.subTest(tokens=tokens), self.assertRaises(ConfigurationError):
                 await model.complete("stage", "prompt", max_tokens=tokens)
-        for prompt in (None, "", " ", "x" * 250_001):
+        for prompt in (None, "", " ", "x" * 1_000_001):
             with self.subTest(prompt_type=type(prompt).__name__), self.assertRaises(ConfigurationError):
                 await model.complete("stage", prompt, max_tokens=10)
         client.chat.completions.create.assert_not_called()

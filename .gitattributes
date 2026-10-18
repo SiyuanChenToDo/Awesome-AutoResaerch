@@ -1,0 +1,5 @@
+# The catalog verifies snapshot bytes against their original SHA-256.
+# Preserve those LF bytes on Windows as well as Linux.
+sources/snapshots/*.md text eol=lf
+third_party/** -text
+LICENSES/** -text

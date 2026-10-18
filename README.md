@@ -19,11 +19,18 @@
 
 ---
 
-**Scientific Agent for Grounded Exploration** 是一个逐步建设中的模块化科研提案工作流。核心代码与提示词位于 [sage/](sage/)，来自对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。离线与联网模式使用同一控制器，通过可替换的模型和文献提供方运行。
+**Scientific Agent for Grounded Exploration** 是一个科研猜想发现与证据工作台。新增原生自主入口使用 [CORAL](https://github.com/Human-Agent-Society/CORAL) 管理 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，加载 [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 研究技能，自行调研、提出猜想、查新、批评和修订。既有模块化提案、实验与写作代码位于 [sage/](sage/)，包含对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。
 
-**当前状态**：407 项离线测试通过。`sage closed-loop` 已用真实 DeepSeek、固定真实论文语料、共享讨论、原版 ARIS 门控和原生 CORAL 训练评价完成一次有界实验闭环：两轮开发、一次新种子确认、统计、写作与保存后反算核对。它验证固定符号回归子实验的工程连接，不代表完整生成方案、论文规模实验或科学有效性已经完成。新增写作续跑核对原始实验后独立重写正文，并显式区分调用完成与草稿仍待修订，见[写作修复验证](docs/writing-validation-20261018.md)、[闭环入口](docs/closed-loop-runtime.md)与[闭环验证范围](docs/closed-loop-validation-20261018.md)。较早的[提案验证](docs/validation-20261018.md)和[接入验证](docs/aris-coral-validation-20261018.md)保留历史边界。
+**当前软件验证**：433 项离线测试在 Windows 和 AutoDL Linux 通过。新入口的运行方式、原生组件、单 API 评审边界及产物见[自主猜想发现](docs/autonomous-conjectures.md)。调用完成、文档有内容、模型分数与科学结论成立分别记录。
+
+**历史验证范围**：较早的 `sage closed-loop` 使用固定真实论文语料和固定符号回归程序，完成了开发、确认、统计、报告和反算核对。它验证子实验的工程连接，不能当作全自主科研的证明。详见[闭环验证](docs/closed-loop-validation-20261018.md)、[写作修复验证](docs/writing-validation-20261018.md)与[较早的接入验证](docs/aris-coral-validation-20261018.md)。
 
 <a id="capabilities"></a>
+
+**自主猜想入口**：新增 `sage autonomous`，由原生 CORAL 管理器运行 DeepSeek Harness，挂载 ARIS 原始研究技能，调用 SAGE 的真实检索和跨章节证据提炼工具。从空项目自动调研、生成、查新、找反证和批评修订，见[安装与使用](docs/autonomous-conjectures.md)。这与此前固定符号回归子实验的 `closed-loop` 是不同入口；只有单一模型 API 时，输出是待验证猜想，同家族互评不算 ARIS 独立验收。
+
+**完整论文写作更新**：已移除原先每节一段、160 词 / 1400 字符的篇幅限制。新增 `sage write-paper`，支持完整正文、公式、已核对的引文、实测图表、整篇多视角评阅与修订，以及 LaTeX / Markdown 输出；见[完整论文入口](docs/full-manuscript.md)。它将论文完整性与科研结论是否成立分别记录。原 `write-report` 保留为证据账本兼容入口。
+
 ## 从一个问题，到一份可追溯的提案
 
 ```text
@@ -58,7 +65,7 @@ Python **3.10+**，标准库即可运行。无需 API key、GPU、第三方依�
 ```bash
 git clone https://github.com/SiyuanChenToDo/Awesome-AutoResaerch.git
 cd Awesome-AutoResaerch
-git switch feat/ai-research-workbench
+git switch codex/flow-reliability
 
 python -m sage doctor
 python -m sage run --mode offline --topic "证据约束的研究想法生成" --output projects/sage-demo

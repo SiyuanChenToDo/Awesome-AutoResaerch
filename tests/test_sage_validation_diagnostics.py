@@ -119,6 +119,7 @@ class RuntimeDiagnostics(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('sensitive-output-marker',json.dumps(rt.audit))
             stored=json.loads(cp.path.read_text())['data']
             self.assertEqual(len(stored['rejections']),2)
-            self.assertEqual(cp.path.stat().st_mode & 0o777,0o600)
+            if __import__('os').name == 'posix':
+                self.assertEqual(cp.path.stat().st_mode & 0o777,0o600)
             failed=next(e for e in cp.entries.values() if e['status']=='failed')
             self.assertEqual(failed['validation']['rule'],'unchanged_idea')

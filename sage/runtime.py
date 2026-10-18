@@ -191,7 +191,15 @@ class Runtime:
                 if hasattr(model, 'last_usage'):
                     model.last_usage = None
                 response = await model.complete(stage, request, max_tokens=self.config.max_tokens_per_call)
-            except TruncatedResponse:
+            except TruncatedResponse as error:
+                partial = getattr(error, 'partial_response', None)
+                if (self.checkpoint and self.retain_rejected_responses and isinstance(partial,str)
+                        and len(partial)<=self.config.max_response_chars):
+                    self.checkpoint.rejections.append({'stage':stage,'attempt':local_attempt,
+                        'request_sha256':digest(request),'response_sha256':digest(partial),
+                        'validation':{'rule':'truncated_response','field':'response'},
+                        'raw_request':request,'raw_response':partial,
+                        'classification':'private_truncated_output_not_a_success'})
                 if stage in ('experiment_design.generate', 'experiment_design.refine'):
                     shortened = True
                     self.event(stage, 'truncation_recovery', policy='concise_complete_v1',
