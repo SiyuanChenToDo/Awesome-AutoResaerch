@@ -21,7 +21,7 @@
 
 **Scientific Agent for Grounded Exploration** 是一个科研猜想发现与证据工作台。新增原生自主入口使用 [CORAL](https://github.com/Human-Agent-Society/CORAL) 管理 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，加载 [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 研究技能，自行调研、提出猜想、查新、批评和修订。既有模块化提案、实验与写作代码位于 [sage/](sage/)，包含对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。
 
-**当前软件验证**：434 项离线测试在 Windows 和 AutoDL Linux 通过。新入口的运行方式、原生组件、单 API 评审边界及产物见[自主猜想发现](docs/autonomous-conjectures.md)。调用完成、文档有内容、模型分数与科学结论成立分别记录。
+**当前软件验证**：434 项离线测试在 Windows 和 AutoDL Linux 通过。Flash 的原生自主猜想闭环已完成一次真实运行，见[实际验证与未解决问题](docs/native-conjecture-validation-20261018.md)；运行方式和单 API 边界见[自主猜想发现](docs/autonomous-conjectures.md)。调用完成、文档有内容、模型分数与科学结论成立分别记录。
 
 **历史验证范围**：较早的 `sage closed-loop` 使用固定真实论文语料和固定符号回归程序，完成了开发、确认、统计、报告和反算核对。它验证子实验的工程连接，不能当作全自主科研的证明。详见[闭环验证](docs/closed-loop-validation-20261018.md)、[写作修复验证](docs/writing-validation-20261018.md)与[较早的接入验证](docs/aris-coral-validation-20261018.md)。
 
