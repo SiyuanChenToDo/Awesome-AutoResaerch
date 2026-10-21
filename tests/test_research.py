@@ -67,7 +67,7 @@ class ProjectFixture(unittest.TestCase):
 
     def test_init_creates_complete_draft_without_experiment_records(self):
         project = self.create()
-        self.assertEqual(project, self.root / "projects/fixture-study")
+        self.assertEqual(project, (self.root / "projects/fixture-study").resolve())
         for name in research.PROJECT_FILES + ["project.json"]:
             self.assertTrue((project / name).is_file(), name)
         metadata = research.read_json(project / "project.json")

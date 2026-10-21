@@ -34,20 +34,32 @@ async def run(topic, main_model, source, *, cheap_model=None, config=None, mode=
         discussion = Discussion(runtime)
         result.discussion = discussion.ledger
     try:
-        anchors = await discovery.anchors(topic)
+        # Keep a bounded reserve of relevant anchors so one short chain does not
+        # discard an otherwise usable search result or consume a student slot.
+        anchors = await discovery.anchors(topic, limit=min(20, config.max_candidates + config.search_rewrites))
         if not anchors:
             raise NoEvidence('No anchor papers found within the search budget')
-        if discussion:
-            anchors = anchors[:config.discussion_students]
+        if discussion and len(anchors) < config.discussion_students:
+            raise NoEvidence('Hybrid discussion requires the configured number of distinct student chains; insufficient relevant anchors')
+        required = config.discussion_students if discussion else config.max_candidates
         for anchor in anchors:
             try:
                 chain = await literature.build_chain(anchor, topic)
-                result.candidates.append(await ideation.generate(chain, topic))
+                if config.claim_review:
+                    lenses = ('mechanism and falsification', 'efficiency with matched budgets', 'failure cases and robustness', 'measurement and strong baselines')
+                    candidate = await ideation.generate(chain, topic, lens=lenses[len(result.candidates) % len(lenses)])
+                else:
+                    candidate = await ideation.generate(chain, topic)
+                result.candidates.append(candidate)
+                if len(result.candidates) >= required:
+                    break
             except NoEvidence as error:
                 result.errors.append({'code': error.code, 'message': str(error)})
                 runtime.event('orchestration.candidate', 'skipped_insufficient_evidence', anchor_id=anchor.paper_id, anchor_url=anchor.url)
         if not result.candidates:
             raise NoEvidence('No candidate met the minimum literature-chain requirement')
+        if discussion and len(result.candidates) < required:
+            raise NoEvidence('Hybrid discussion requires the configured number of distinct student chains')
         result.ranking = await review.rank(result.candidates, topic)
         result.selected_index = result.ranking['selected_index']
         if discussion:

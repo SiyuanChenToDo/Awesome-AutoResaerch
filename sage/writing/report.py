@@ -37,9 +37,9 @@ import math
 import re
 from typing import Protocol
 
-from ..errors import BudgetExceeded, InvalidResponse, SageError
+from ..errors import BudgetExceeded, InvalidResponse, SageError, ValidationError
 from ..review.report import review_report
-from .prompts import SECTIONS, TITLES, scaffold_prompt, section_prompt, revision_prompt
+from .prompts import SECTIONS, TITLES, scaffold_prompt, section_prompt, revision_prompt, MAX_COMMENTARY_CHARS
 
 
 class EvidenceWriter(Protocol):
@@ -87,6 +87,12 @@ def parse_section(value, reference_ids):
         raise InvalidResponse('Report section has unexpected fields')
     if not isinstance(section['commentary'], str) or not section['commentary'].strip():
         raise InvalidResponse('Report commentary is missing')
+    if len(section['commentary']) > MAX_COMMENTARY_CHARS:
+        raise ValidationError('bounded_commentary', 'commentary')
+    # Narrow form check for the concrete failure observed in a real revision.
+    # This does not certify prose quality, entailment, or numerical truth.
+    if re.match(r'(?is)^\s*(?:clarify|reframe|correct|rewrite|revise|align|rename)\s+(?:the\s+)?(?:abstract|manuscript|draft|section|description|results|setup)\b|^\s*separate\s+the\s+(?:pre-registered\s+)?(?:design\s+)?proposal\s+from\b|^\s*clarify\s+the\s+executed-vs-proposed\s+split\b',section['commentary']):
+        raise ValidationError('manuscript_prose','commentary')
     citations = section['citation_ids']
     if not isinstance(citations, list) or len(citations) > len(reference_ids) or any(not isinstance(x, str) or x not in reference_ids for x in citations):
         raise InvalidResponse('Report cites an unsupported source')
@@ -218,6 +224,24 @@ def render_markdown(report):
             lines.append(f'  Source identifier: {_text(reference["url"])}')
     if not report['references']:
         lines.append('No supplied proposal references; literature support remains unavailable.')
+    analysis=report.get('research_analysis')
+    if isinstance(analysis,dict) and analysis.get('schema_version')=='sage.sr_analysis.v1':
+        lines += ['', '## Bounded heldout experiment', '',
+                  'Owned analytic functions and an owned LSH proxy; this is not a reproduction of the cited implementations.',
+                  'Numbers below are recomputed from the frozen confirmation ledger. Seed intervals do not cover arbitrary new tasks.', '',
+                  '| Arm | Mean test R2 | Mean OOD R2 | Mean nodes | Accepted | Heldout semantic violations |',
+                  '|---|---:|---:|---:|---:|---:|']
+        for arm,row in analysis['summaries'].items():
+            lines.append(f'| {_text(arm)} | {row["test_r2"]:.6f} | {row["ood_r2"]:.6f} | {row["final_size"]:.3f} | {row["accepted"]} | {row["heldout_semantic_violations"]} |')
+        lines += ['', 'Primary hypothesis status: '+_text(analysis['primary_claim_status'])+'.', '',
+                  '| Probe verified minus control | Mean test R2 difference | Seed bootstrap 95% interval | Holm p |',
+                  '|---|---:|---|---:|']
+        for row in analysis['contrasts']:
+            lines.append(f'| {_text(row["control"])} | {row["mean_delta_test_r2"]:.6f} | [{row["ci95"][0]:.6f}, {row["ci95"][1]:.6f}] | {row["holm_p"]:.6f} |')
+        lines += ['', 'Complexity matching criteria all met: '+str(analysis['all_complexity_matches_met'])+'.',
+                  'The fixed penalty ladder does not guarantee a matched-complexity comparison. See analysis.json for per-function distances.',
+                  'Extra hashing/probe cost is recorded; equal fitness-call counts do not imply equal total compute.',
+                  'Independent scientific replication: not performed.']
     if report['errors'] or report['evidence_warnings']:
         lines += ['', 'Some writing or input checks did not complete cleanly; consult the structured error and evidence-warning records.']
     return '\n'.join(lines) + '\n'
@@ -237,6 +261,7 @@ def render_draft_markdown(report):
              'or invented. Verify them against the separate deterministic evidence report '
              'and original supplied sources before use. This is not a validated manuscript '
              'or permission to publish.', '']
+    lines += ['Draft readiness: '+_text(report.get('draft_readiness','not_assessed'))+'.', '']
     if report['dry_run']:
         lines += ['DRY RUN: no experiment was executed; this draft cannot establish measured results.', '']
     if report['fixture'] or report['proposal_fixture']:
@@ -260,10 +285,69 @@ def render_draft_markdown(report):
                   f'Reading scope: {_text(reference["evidence_scope"])}.']
     if not report['references']:
         lines += ['No supplied sources are available.']
+    if report.get('research_analysis'):
+        details=report.get('research_details',{})
+        if details:
+            lines += ['', '## Recorded implementation appendix', '',
+                      'Controller-authored implementation notes and frozen configuration.', '']
+            for key in ('selected_policy','functions','split_sizes','operators','inputs','search','hash','gate','exact_probe','semantic_audit','selection','unexecuted_controls'):
+                if key in details:
+                    value=json.dumps(details[key],ensure_ascii=False) if isinstance(details[key],(dict,list)) else details[key]
+                    lines += ['- '+_text(key)+': '+_text(value)]
+            for key in ('population','generations','development_seeds','confirmation_seeds'):
+                if key in report['contract']:
+                    lines += ['- '+_text(key)+': '+_text(json.dumps(report['contract'][key]))]
+        # The numerical appendix is controller rendered from recorded analysis,
+        # never copied from or inferred out of model prose.
+        facts=render_markdown(report)
+        marker='## Bounded heldout experiment\n'
+        if marker in facts:
+            lines += ['', '## Recorded measurement appendix', '',
+                      'Controller-rendered data from the frozen experiment; separate from unverified prose.', '',
+                      facts.split(marker,1)[1]]
     return '\n'.join(lines) + '\n'
 
 
-async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
+def proposal_context(proposal):
+    """Stable semantic view; replay logs and duplicate histories are not evidence.
+
+    Keep source extractions and accepted requirements intact. The complete ledger
+    remains in artifacts, without being copied into every section request.
+    """
+    from ..discussion.context import compact_payload, compact_handoff
+    view = {key: deepcopy(proposal[key]) for key in
+            ('topic', 'mode', 'status', 'selected_index', 'errors', 'evidence') if key in proposal}
+    view['candidates'] = []
+    for candidate in proposal.get('candidates', []):
+        chain = candidate.get('chain', {})
+        novelty = candidate.get('novelty', {})
+        view['candidates'].append({
+            **{key: deepcopy(candidate[key]) for key in ('idea', 'future', 'human_considerations') if key in candidate},
+            'chain': {key: deepcopy(chain[key]) for key in ('evidence', 'trend', 'entities', 'relation', 'stop_reasons') if key in chain},
+            'novelty': {**{key: deepcopy(novelty[key]) for key in ('status', 'summary', 'similar_paper_id', 'basis') if key in novelty},
+                        'compared_source_ids': [p.get('paper_id') for p in novelty.get('compared_papers', [])],
+                        **{key:deepcopy(novelty[key]) for key in ('research_claims','review_receipt') if key in novelty}},
+            'rejected_attempts': [{key: deepcopy(attempt[key]) for key in
+                ('attempt', 'summary', 'similar_paper_id', 'queries') if key in attempt}
+                for attempt in candidate.get('rejected_attempts', [])]})
+    experiment = proposal.get('experiment')
+    if isinstance(experiment, dict):
+        view['experiment'] = {key: deepcopy(experiment[key]) for key in
+                              ('proposal', 'status', 'design_contract') if key in experiment}
+    discussion = proposal.get('discussion')
+    if isinstance(discussion, dict):
+        view['discussion'] = {'status': discussion.get('status'),
+            'critiques': [{key: deepcopy(c[key]) for key in
+                ('critique_id', 'status', 'requested_change', 'uncertainty', 'error_code') if key in c}
+                for c in discussion.get('critiques', [])]}
+        if discussion.get('plan_handoff'):
+            view['discussion']['plan_handoff'] = compact_handoff(discussion['plan_handoff'])
+    view['evidence_ids'] = [source['paper_id'] for source in supplied_references(proposal)]
+    view['history_scope'] = 'Final proposal and supplied evidence only; full history and audit are retained separately.'
+    return compact_payload('report', view)
+
+
+async def generate_report(runtime, proposal: dict, execution: dict, *, on_progress=None) -> dict:
     """Draft/review with the supplied Runtime; deterministic facts survive model failure."""
     if not isinstance(proposal, dict) or not isinstance(execution, dict):
         raise ValueError('Proposal and execution must be dictionaries')
@@ -284,13 +368,24 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
               'rendering_policy': 'deterministic_evidence_only_model_prose_quarantined',
               'source_methods': ['PaperSolver.gen_initial_report', 'PaperSolver.system_prompt',
                                  'PaperSolver.solve', 'PaperSolver.process_command', 'agents.get_score']}
+    if execution.get('research_analysis') is not None:
+        report['research_analysis']=deepcopy(execution['research_analysis'])
+    if execution.get('research_details') is not None:
+        report['research_details']=deepcopy(execution['research_details'])
     report['sections'] = [{'section_id': name, 'title': TITLES[name], 'commentary': '',
                            'citation_ids': [], 'claim_status': 'unverified_model_commentary',
                            'rendered_in_markdown': False, 'status': 'not_generated'} for name in SECTIONS]
-    context = {'proposal': proposal, 'references': references, 'contract': report['contract'],
+    if on_progress:
+        on_progress(report)
+    context = {'proposal': proposal_context(proposal), 'references': references, 'contract': report['contract'],
                'execution_status': report['execution_status'], 'observations': observations,
                'fixture': report['fixture'], 'dry_run': dry_run,
                'scientific_validation': 'not_performed'}
+    if 'research_analysis' in report:
+        context['research_analysis']=report['research_analysis']
+    if 'research_details' in report:
+        context['research_details']=report['research_details']
+        context['writing_priority']='Describe the executed pilot in actual prose. Discuss unexecuted proposal controls only as future work and limitations; never turn them into completed methods.'
     stage = 'writing.scaffold'
     try:
         def validate_scaffold(values):
@@ -302,6 +397,8 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
             values = await runtime.ask(stage, section_prompt(section['section_id'], context, report['sections']),
                                        ('section',), validate=lambda values: parse_section(values['section'], reference_ids))
             section.update(parse_section(values['section'], reference_ids))
+            if on_progress:
+                on_progress(report)
             runtime.event(stage, 'drafted', section_id=section['section_id'], claim_status='unverified_model_commentary')
         stage = 'review.report'
         report['model_review'] = await review_report(runtime, context, report['sections'])
@@ -333,6 +430,8 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
                 entry['previous_review'] = current_review
                 report['sections'], report['model_review'] = candidate, candidate_review
             entry['status'] = 'accepted' if entry['accepted'] else 'retained_previous_draft'
+            if on_progress:
+                on_progress(report)
             runtime.event('writing.revise', entry['status'], round=round_index + 1,
                           basis='unverified_model_score_only')
         report['status'] = 'completed_with_uncertainty' if warnings else 'completed'
@@ -344,5 +443,12 @@ async def generate_report(runtime, proposal: dict, execution: dict) -> dict:
             report['revision_history'][-1]['status'] = 'failed_previous_draft_preserved'
         runtime.event('writing.report', report['status'], error_code=error.code)
     report['markdown'] = render_markdown(report)
+    # Completion describes a bounded software workflow, not manuscript readiness.
+    # Keep an unresolved reviewer request visible even when the call chain ended.
+    review=report.get('model_review')
+    report['draft_readiness']=('incomplete' if not report['status'].startswith('completed') else
+        ('revision_required' if review is None or review.get('requires_revision') else 'draft_for_human_review'))
     report['draft_markdown'] = render_draft_markdown(report)
+    if on_progress:
+        on_progress(report)
     return report

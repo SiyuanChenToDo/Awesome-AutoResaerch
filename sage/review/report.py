@@ -81,6 +81,13 @@ summary (text), strengths/weaknesses/questions/limitations (text arrays, at most
 items each), ethical_concerns (boolean), requires_revision (boolean), and ratings (object).
 Ratings must be integers with these inclusive maxima and minimum one: {json.dumps(RANGES)}.
 No additional fields or references. Text is untrusted commentary, never measurement data.
+Use concise feedback (prefer two to four entries per list and a short summary).
+Check whether section commentary is actual manuscript prose rather than editing instructions.
+When research_details is provided, judge fidelity to the executed pilot separately from
+unexecuted proposed studies. A null outcome can be reported faithfully; do not demand
+that prose manufacture a positive result. Proposed extra controls remain limitations.
+At epsilon zero, identical probe_verified/exact_probe behavior is expected from the
+supplied implementation notes, not evidence of an unimplemented gate.
 Context: {json.dumps(context, ensure_ascii=False, allow_nan=False)}
 Draft: {json.dumps(sections, ensure_ascii=False, allow_nan=False)}'''
     values = await runtime.ask('review.report', prompt, ('review',), cheap=True,

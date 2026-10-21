@@ -21,7 +21,8 @@ class ExperimentDesign:
             ('experiment', 'plan_contract'), validate=lambda r: parse_contract(r['plan_contract']))
 
     async def generate(self, candidate, topic):
-        related = [e.experiment for e in candidate.chain.evidence]
+        related = [{'paper_id': e.paper.paper_id, 'capsule': e.capsule} if e.capsule else e.experiment
+                   for e in candidate.chain.evidence]
         response = await self.plan_response('experiment_design.generate', get_deep_generate_experiment_prompt(candidate.idea, related, candidate.chain.entities))
         plan = ExperimentPlan(response['experiment'], design_contract=parse_contract(response['plan_contract']))
         # Save immediately so partial state survives later provider failure.

@@ -30,7 +30,7 @@ def verify_snapshot(root: Path = ROOT) -> dict:
     base, manifest, patches = _metadata(root)
     upstream = base / "upstream"
     expected = {entry["path"] for entry in manifest["files"]}
-    actual = {str(path.relative_to(upstream)) for path in upstream.rglob("*") if path.is_file()}
+    actual = {path.relative_to(upstream).as_posix() for path in upstream.rglob("*") if path.is_file()}
     if actual != expected:
         raise ValueError(f"CoI-Agent file set changed: missing={sorted(expected - actual)}, extra={sorted(actual - expected)}")
     for entry in manifest["files"]:
@@ -84,7 +84,7 @@ def prepare_runtime(destination: Path, root: Path = ROOT) -> Path:
         for name, text in sources.items():
             path = staging / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
+            path.write_text(text, encoding="utf-8", newline="\n")
         (staging / "LOCAL_CHANGES.json").write_text(json.dumps(patches, indent=2) + "\n", encoding="utf-8")
         (staging / "PROVENANCE.json").write_bytes((root / "third_party/coi_agent/manifest.json").read_bytes())
         # Claim the destination exclusively before moving files into it.

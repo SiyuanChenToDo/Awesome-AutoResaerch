@@ -52,7 +52,7 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.experiment.revisions), 1)
         self.assertEqual(len(result.experiment.revisions[0]['paper_infos']), 2)
         self.assertTrue(result.experiment.revisions[0]['paper_infos'][0]['url'])
-        self.assertEqual(result.usage['model_calls'], 44)
+        self.assertEqual(result.usage['model_calls'], 46)  # includes two anchor relevance checks
         self.assertEqual(result.usage['search_calls'], 15)
         stages = {e['stage'] for e in result.audit}
         self.assertTrue({'discovery.citations', 'discovery.references', 'ideation.regenerate',
@@ -90,9 +90,9 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(c.novelty.status == 'not_established' for c in result.candidates))
 
     async def test_model_budget_counts_attempts_and_preserves_partial_evidence(self):
-        result = await self.execute(config=RunConfig(max_model_calls=3))
+        result = await self.execute(config=RunConfig(max_model_calls=5))
         self.assertEqual(result.status, 'stopped')
-        self.assertEqual(result.usage['model_calls'], 3)
+        self.assertEqual(result.usage['model_calls'], 5)
         self.assertEqual(result.errors[-1]['code'], 'budget_exceeded')
         self.assertTrue(any(e['stage'] == 'literature.evidence' for e in result.audit))
         self.assertTrue(result.validation['contract_passed'])
@@ -112,7 +112,7 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         model = FixtureModel(overrides={'discovery.queries': [TransientProviderError('sensitive provider body')]})
         result = await self.execute(model=model)
         self.assertEqual(result.status, 'completed')
-        self.assertEqual(result.usage['model_calls'], 45)
+        self.assertEqual(result.usage['model_calls'], 47)
         self.assertEqual(model.calls['discovery.queries'], 2)
         self.assertNotIn('sensitive provider body', json.dumps(result.to_dict()))
         failed = [e for e in result.audit if e['stage'] == 'discovery.queries' and e['status'] == 'failed']
@@ -177,6 +177,21 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RuntimeAndDiscoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_events_record_utc_time_and_elapsed_monotonic_progress(self):
+        from datetime import datetime, timezone
+        ticks = iter((100.0, 101.0, 103.5))
+        runtime = Runtime(FixtureModel(), FixtureModel(), FixtureSource(), RunConfig(), clock=lambda: next(ticks))
+        before = datetime.now(timezone.utc)
+        runtime.event('handoff', 'started')
+        runtime.event('handoff', 'succeeded')
+        after = datetime.now(timezone.utc)
+        self.assertEqual([e['elapsed_seconds'] for e in runtime.audit], [1.0, 3.5])
+        for event in runtime.audit:
+            observed = datetime.fromisoformat(event['time'])
+            self.assertIsNotNone(observed.utcoffset())
+            self.assertLessEqual(before, observed)
+            self.assertLessEqual(observed, after)
+
     async def test_call_timeout_bounded(self):
         config = RunConfig(request_timeout_seconds=0.005)
         runtime = Runtime(FixtureModel(), FixtureModel(), FixtureSource(), config)

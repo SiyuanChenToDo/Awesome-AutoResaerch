@@ -3,6 +3,17 @@ from dataclasses import dataclass, asdict
 import math
 from .errors import ConfigurationError
 
+# Single-request output budget for every review-chain completion (scientific
+# review, novelty feedback, peer advice audit and their bounded JSON repairs),
+# for the write-paper default, and for startup capacity preflight probes.
+# Measured on the 2026-10-19 unattended run: novelty_feedback completion P100
+# was ~32.1k tokens, only 2% below the former 32 Ki cap; 25 of 36 review
+# dispatches entered repair retries consistent with truncation at the cap.
+# 49152 = 32k x 1.5, still far below the official 393216 output ceiling and
+# inside the RunConfig.max_tokens_per_call validation bound (65536), so the
+# preflight identity text_tokens + max_tokens + 4096 <= 1048576 still holds.
+REVIEW_MAX_OUTPUT_TOKENS = 49152
+
 
 @dataclass(frozen=True)
 class RunConfig:
@@ -28,10 +39,41 @@ class RunConfig:
     discussion_students: int = 2
     discussion_rounds: int = 1
     discussion_prompt_version: str = "v2"
+    evidence_mode: str = "legacy"
+    capsule_semantic_audit: bool = False
+    paper_text_mode: str = "provided"
+    rerank_mode: str = "auto"
+    novelty_search_rewrites: int = 0
+    capsule_chunk_chars: int = 7000
+    capsule_max_chunks: int = 8
+    capsule_max_claims: int = 18
+    capsule_max_chars: int = 12000
+    novelty_fulltext_papers: int = 0
+    citation_policy: str = 'required'
+    claim_review: bool = False
+    max_research_claims: int = 3
+    queries_per_claim: int = 2
 
     def __post_init__(self):
-        if self.discussion_mode not in ('none', 'hybrid') or self.discussion_prompt_version not in ('v1', 'v2'):
+        if type(self.capsule_semantic_audit) is not bool:
+            raise ConfigurationError('capsule_semantic_audit must be a boolean')
+        if type(self.claim_review) is not bool or type(self.max_research_claims) is not int or not 1 <= self.max_research_claims <= 5 or type(self.queries_per_claim) is not int or not 1 <= self.queries_per_claim <= 3:
+            raise ConfigurationError('Invalid claim screening limits')
+        if self.discussion_mode not in ('none', 'hybrid') or self.discussion_prompt_version not in ('v1', 'v2', 'v3'):
             raise ConfigurationError('Invalid discussion mode or prompt version')
+        if self.evidence_mode not in ('legacy', 'capsule') or self.paper_text_mode not in ('provided', 'arxiv'):
+            raise ConfigurationError('Invalid evidence or paper text mode')
+        if self.rerank_mode not in ('auto', 'model', 'semantic', 'lexical'):
+            raise ConfigurationError('Invalid rerank mode')
+        if self.citation_policy not in ('required', 'prefer'):
+            raise ConfigurationError('Invalid citation policy')
+        bounds = {'novelty_search_rewrites': (0, 4), 'capsule_chunk_chars': (1000, 16000),
+                  'capsule_max_chunks': (1, 20), 'capsule_max_claims': (1, 40),
+                  'capsule_max_chars': (2000, 240000), 'novelty_fulltext_papers': (0, 5)}
+        for name, (low, high) in bounds.items():
+            value = getattr(self, name)
+            if type(value) is not int or not low <= value <= high:
+                raise ConfigurationError(f'{name} outside supported range')
         if type(self.discussion_students) is not int or not 2 <= self.discussion_students <= 4:
             raise ConfigurationError('discussion_students must be between 2 and 4')
         if type(self.discussion_rounds) is not int or not 1 <= self.discussion_rounds <= 3:
@@ -70,3 +112,21 @@ class RunConfig:
 
     def to_dict(self):
         return asdict(self)
+
+
+def profile_overrides(name):
+    """Explicit quality profile; keep small/offline compatibility defaults affordable."""
+    if name == 'standard':
+        return {}
+    if name != 'research':
+        raise ConfigurationError('Unknown research profile')
+    return dict(claim_review=True, evidence_mode='capsule', capsule_semantic_audit=True,
+                capsule_max_chars=240000, paper_text_mode='arxiv', rerank_mode='semantic',
+                novelty_fulltext_papers=2, citation_policy='prefer',
+                novelty_search_rewrites=2, max_candidates=4, max_chain_length=5,
+                min_chain_length=3, max_queries=4, max_related=12,
+                discussion_mode='hybrid', discussion_students=4, discussion_rounds=2,
+                discussion_prompt_version='v3', max_model_calls=400,
+                max_search_calls=160, max_wall_seconds=3600,
+                max_tokens_per_call=4000, max_reserved_output_tokens=1600000,
+                max_prompt_chars=180000)

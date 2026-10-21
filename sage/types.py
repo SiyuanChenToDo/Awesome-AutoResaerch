@@ -26,6 +26,7 @@ class Evidence:
     experiment: str
     entities: str
     references: list[str]
+    capsule: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -41,7 +42,9 @@ class Chain:
         prefix = ("TOPIC/TIME CHAIN: chronological thematic comparison only; no citation, reference, "
                   "influence or historical dependency edges were retrieved. Do not claim one paper builds on another.\n"
                   if self.relation == "topic_time" else "")
-        return prefix + "\n\n".join(f"{i}.Paper:{e.paper.title} date:{e.paper.publication_date} idea:{e.idea}"
+        import json
+        return prefix + "\n\n".join(f"{i}.Paper:{e.paper.title} date:{e.paper.publication_date} " +
+                                      ('Evidence capsule: ' + json.dumps(e.capsule, ensure_ascii=False) if e.capsule else f'idea:{e.idea}')
                                       for i, e in enumerate(self.evidence))
 
 
@@ -53,6 +56,9 @@ class NoveltyAssessment:
     summary: str
     similar_paper_id: str | None = None
     basis: str = "model_assessment_of_retrieved_sources"
+    comparisons: list[dict[str, Any]] = field(default_factory=list)
+    research_claims: list[dict[str, Any]] = field(default_factory=list)
+    review_receipt: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -76,6 +76,48 @@ class FixtureModel:
         if stage.startswith('discussion.'):
             from .discussion.fixtures import respond
             return respond(stage, prompt)
+        if stage == 'review.claims.extract':
+            papers = json.loads(prompt.split('READ_EVIDENCE: ',1)[1].split('\nExtract ',1)[0])
+            return '<claims>' + json.dumps([{'statement':'Synthetic proposed mechanism, not a finding.',
+                'kind':'method','source_ids':[papers[0]['paper_id']], 'queries':['sage-fixture-novelty'],
+                'falsifier':'A paired synthetic control shows no change.'}]) + '</claims>'
+        if stage == 'review.claims.assess':
+            dossier = json.loads(prompt.split('CLAIM_DOSSIER: ',1)[1].split('\nIndependently ',1)[0])
+            return '<assessment>' + json.dumps({'overall_verdict':'insufficient_evidence',
+                'combination_prior_id':None,'score':5,'verdict':'not ready','uncertainty':'Synthetic fixture only.',
+                'assessments':[{'claim_id':d['claim']['claim_id'],'status':'insufficient_evidence',
+                    'closest_paper_id':d['sources'][0]['paper']['paper_id'] if d['sources'] else None,
+                    'overlap':'Synthetic context.','delta':'Unverified proposal.',
+                    'evidence_limit':'Fixture is not scientific evidence.','decisive_test':'Run the fixed synthetic comparison.'}
+                    for d in dossier]}) + '</assessment>'
+        if stage == 'literature.span_capsule':
+            passages = json.loads(prompt.split('INPUT_PASSAGES: ', 1)[1])
+            return '<capsule>' + json.dumps({'claims': [{'category': 'method',
+                'claim': 'Synthetic fixture source text, not empirical evidence.',
+                'span_ids': [passages[0]['span_id']]}], 'inferences': []}) + '</capsule>'
+        if stage == 'literature.entailment':
+            batch = json.loads(prompt.split('INPUT_CLAIMS_AND_ORIGINAL_PASSAGES: ', 1)[1])
+            return '<entailment>' + json.dumps({'claims': [{
+                'claim_id': item['claim_id'], 'verdict': 'supported',
+                'source_span_ids': list(item['source_spans']),
+                'reason': 'Deterministic fixture only, not a scientific semantic judgment.',
+                'unsupported_details': []} for item in batch]}) + '</entailment>'
+        if stage == 'literature.capsule':
+            chunk = json.loads(prompt.split('INPUT_CHUNK: ', 1)[1])
+            value = {'claims': [{'category': 'method', 'claim': 'Synthetic fixture text, not empirical evidence.',
+                                 'quote': chunk['text'][:200], 'chunk_id': chunk['chunk_id']}], 'inferences': []}
+            return '<capsule>' + json.dumps(value) + '</capsule>'
+        if stage == 'discovery.semantic_rank':
+            papers = json.loads(prompt.split('INPUT_PAPERS: ', 1)[1])
+            return '<ranking>' + json.dumps([{'paper_id': p['paper_id'], 'score': 3,
+                        'reason': 'Synthetic fixture relevance, not calibrated.'} for p in papers]) + '</ranking>'
+        if stage == 'review.nearest_work':
+            papers = json.loads(prompt.split('RETRIEVED: ', 1)[1])
+            identity = papers[0]['paper_id']
+            return '<comparison>' + json.dumps({'verdict':'insufficient_evidence','closest_paper_id':identity,
+                'comparisons':[{'paper_id':identity,'shared_problem':'Synthetic comparison',
+                 'shared_mechanism':'Not established by synthetic evidence','difference':'Unverified proposed difference',
+                 'evidence_limit':'Fixture only'}], 'uncertainty':'Fixture does not establish novelty.'}) + '</comparison>'
         if stage == 'discovery.queries':
             return '<queries>["sage-fixture-a", "sage-fixture-b"]</queries>'
         if stage == 'discovery.rewrite':
@@ -86,7 +128,7 @@ class FixtureModel:
             return (f'<idea>Synthetic source idea for {identity}; unverified.</idea>'
                     f'<experiment>Synthetic source plan for {identity}; not executed.</experiment>'
                     f'<entities>Fixture method, fixed evaluator, controlled budget</entities><references>{refs}</references>')
-        if stage == 'literature.relevance':
+        if stage in ('literature.relevance', 'discovery.anchor_relevance'):
             return '<relevant>1</relevant>'
         if stage == 'ideation.trend':
             return '<trend>Synthetic chain moves from a baseline toward controlled evaluation.</trend>'

@@ -29,18 +29,20 @@ def code_version():
 def provider_identity(provider):
     config = getattr(provider, 'config', None)
     # Never serialize credentials, proxy addresses, or arbitrary provider reprs.
-    return {'class': type(provider).__module__ + '.' + type(provider).__qualname__,
+    return {**({'corpus_sha256':provider.corpus_sha256} if hasattr(provider,'corpus_sha256') else {}),
+            'class': type(provider).__module__ + '.' + type(provider).__qualname__,
             'settings': {key: getattr(config, key, None) for key in
                          ('model', 'provider', 'endpoint', 'is_azure', 'api_version',
                           'deepseek_thinking', 'embedding_model', 'embedding_endpoint', 'embedding_api_version')},
             'chain_relation': getattr(provider, 'chain_relation', None)}
 
 
-def identity(topic, mode, config, articles, main_model, cheap_model, source):
+def identity(topic, mode, config, articles, main_model, cheap_model, source, reviewer_model=None):
+    providers = [main_model, cheap_model, source] + ([reviewer_model] if reviewer_model is not None else [])
     return {'schema': VERSION, 'code_sha256': code_version(),
             'input_sha256': digest({'topic': topic, 'mode': mode, 'articles': articles,
                                     'config': config.to_dict()}),
-            'providers_sha256': digest([provider_identity(x) for x in (main_model, cheap_model, source)])}
+            'providers_sha256': digest([provider_identity(x) for x in providers])}
 
 
 def encode(value):
@@ -113,7 +115,9 @@ class Checkpoint:
         body = json.dumps({'data': data, 'sha256': digest(data)}, ensure_ascii=False, allow_nan=False)
         temporary = self.path.with_suffix('.pending')
         # Output directory is private and checked by CLI. No secret environment is stored.
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        if temporary.is_symlink():
+            raise ConfigurationError('Checkpoint temporary path must not be a symlink')
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0), 0o600)
         with os.fdopen(fd, 'w') as stream:
             stream.write(body)
             stream.flush()

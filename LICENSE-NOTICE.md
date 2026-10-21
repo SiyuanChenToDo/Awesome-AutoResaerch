@@ -21,3 +21,8 @@ SAGE（Scientific Agent for Grounded Exploration，基于证据探索的科研�
 ## Agent Laboratory 来源与派生代码
 
 上游 [SamuelSchmidgall/AgentLaboratory](https://github.com/SamuelSchmidgall/AgentLaboratory)，固定提交 `d9017d90e329112d2a80b7712f37ee9094d2cd27`。MIT License，Copyright (c) 2025 Samuel Schmidgall。完整许可见 [LICENSES/Agent-Laboratory-MIT.txt](LICENSES/Agent-Laboratory-MIT.txt)，原文件和哈希见[来源归档](third_party/agent_laboratory/README.md)。维护中的执行、写作与报告评审派生部分保留来源和修改说明；[迁移表](docs/agent-laboratory-migration.md)列明实际改造及未迁移功能。该许可不改变本仓库其他原创部分的许可状态。
+
+
+## ARIS 与 CORAL 可选接入
+
+ARIS 方法派生的主张拆解、查新与候选视角保留 MIT 归属，完整许可见 [LICENSES/ARIS-MIT.txt](LICENSES/ARIS-MIT.txt)。原版门控由外部固定源码执行；CORAL 由外部固定包提供 SubprocessGrader/TaskGrader 接口，许可见 [LICENSES/CORAL-Apache-2.0.txt](LICENSES/CORAL-Apache-2.0.txt)。源码提交、修改范围与自有适配器说明见 [NOTICE.md](NOTICE.md) 和[接入文档](docs/aris-coral-runtime.md)。不因接入而改变其他部分的许可，也不表示上游背书。

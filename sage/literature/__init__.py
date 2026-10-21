@@ -4,7 +4,7 @@
 """Read evidence and traverse forward citations and backward references."""
 from __future__ import annotations
 import json
-from ..errors import InvalidResponse, NoEvidence
+from ..errors import InvalidResponse, NoEvidence, ProviderError
 from ..runtime import string_list
 from ..types import Evidence, Chain, paper_record
 from .prompts import get_deep_reference_prompt, get_deep_judge_relevant_prompt
@@ -30,8 +30,30 @@ def paper_content(paper):
 class Literature:
     def __init__(self, runtime, discovery):
         self.runtime, self.discovery = runtime, discovery
+        if not hasattr(runtime, 'evidence_cards'):
+            runtime.evidence_cards = {}
 
     async def extract(self, paper, topic):
+        if self.runtime.config.evidence_mode == 'capsule':
+            from .capsule import extract_capsule
+            from ..checkpoints import digest
+            key = digest({'paper': paper_record(paper), 'article': paper.article, 'topic': topic})
+            cache = getattr(self.runtime, '_capsule_cache', {})
+            if key not in cache:
+                if self.runtime.config.capsule_semantic_audit:
+                    from dataclasses import replace
+                    from .spans import extract_span_capsule
+                    from .entailment import capsule_view
+                    extracted = await extract_span_capsule(self.runtime, paper, topic, semantic_audit=True)
+                    # The extraction audit keeps the full card. Every consumer
+                    # receives the same copied, semantically labelled view, so
+                    # rejected raw claims cannot reappear in a duplicate ledger.
+                    cache[key] = replace(extracted, capsule=capsule_view(extracted.capsule))
+                else:
+                    cache[key] = await extract_capsule(self.runtime, paper, topic)
+            self.runtime._capsule_cache = cache
+            self.runtime.evidence_cards[paper.paper_id] = cache[key]
+            return cache[key]
         response = await self.runtime.ask('literature.extract', get_deep_reference_prompt(paper_content(paper), topic),
                                           ('idea', 'experiment', 'entities', 'references'), cheap=True,
                                           validate=lambda r: string_list(r['references'], self.runtime.config.max_related))
@@ -72,6 +94,16 @@ class Literature:
     async def build_chain(self, anchor, topic):
         if getattr(self.runtime.source, 'chain_relation', None) == 'topic_time':
             return await self.build_topic_chain(anchor, topic)
+        try:
+            return await self.build_graph_chain(anchor, topic)
+        except (ProviderError, NoEvidence) as error:
+            if self.runtime.config.citation_policy != 'prefer' or not hasattr(self.runtime.source, 'topic_related'):
+                raise
+            self.runtime.event('literature.graph', 'unavailable', error_code=error.code,
+                               fallback='topic_time', citation_graph_available=False)
+            return await self.build_topic_chain(anchor, topic)
+
+    async def build_graph_chain(self, anchor, topic):
         first = await self.extract(anchor, topic)
         evidence, seen, reasons = [first], {anchor.paper_id, anchor.title.casefold()}, []
         maximum = self.runtime.config.max_chain_length

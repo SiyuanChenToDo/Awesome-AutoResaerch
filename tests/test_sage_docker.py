@@ -247,7 +247,9 @@ class DockerBackendTests(unittest.IsolatedAsyncioTestCase):
         process = FakeProcess(running=True)
         docker = FakeDocker(run=process)
         with self.assertRaisesRegex(DockerExecutionError, 'wall timeout'):
-            await self.backend(docker).predict('pass', (1,), timeout=0.01)
+            # Leave enough time for mocked inspect/run startup on Windows;
+            # this case tests cleanup of an already launched process.
+            await self.backend(docker).predict('pass', (1,), timeout=0.2)
         self.assertTrue(process.killed)
         self.assertEqual(len(docker.commands('rm')), 1)
         self.assertFalse(docker.root.exists())

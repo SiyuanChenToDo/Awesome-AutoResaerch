@@ -265,7 +265,7 @@ arXiv API 不提供 citation/reference graph：此选择显式改用 `Chain.rela
 
 ## 可审计检查点与有界恢复
 
-`run` 现在在新输出目录写 `checkpoint.json`。成功的结构化模型回复和检索记录按精确输入缓存；模型定稿已成功、随后 novelty 失败时，定稿仍可恢复。缓存身份包括格式版本、自有 Python 源码哈希、主题/模式/本地 article/配置哈希和非秘密提供方配置哈希。模型凭据、代理 URL、环境变量不写入。缓存包含研究内容，按私有文件保管。
+`run` 与 `laboratory` 在新输出目录写 `checkpoint.json`。成功的结构化模型回复和检索记录按精确输入缓存；模型定稿已成功、随后 novelty 失败时，定稿仍可恢复。缓存身份包括格式版本、自有 Python 源码哈希、主题/模式/本地 article/配置哈希和非秘密提供方配置哈希。laboratory 另绑定工作流、完整评价合同摘要、执行后端与镜像，防止把另一份合同或后端的缓存当成当前批准。模型凭据、代理 URL、环境变量不写入。缓存包含研究内容，按私有文件保管。
 
 在**同一代码、主题、配置及提供方身份**下，选择新输出目录：
 
@@ -282,7 +282,29 @@ live 仍必须显式 `--mode live --allow-live`。`--cache-only-retrieval` 禁�
 
 累计模型/检索请求、预留 token、SDK 实际 token（若提供方返回）、先前审计和活跃运行时长一起恢复，失败不归零。活跃时长不包含进程之间的离线等待。先前成功回复重放时重新执行当前验证器；缓存没有给来源增加权限。含未完成 `pending` 请求的检查点默认拒绝重发，只有显式 `--retry-uncertain` 允许另一次计费尝试；远端完成而本地未写入的窗口无法提供 exactly-once 保证。文件哈希是误改检测，不是签名、防篡改存储或安全沙箱。
 
-本入口只支持 `run`。`laboratory` 明确拒绝这些恢复参数，避免把执行副作用当作可安全重放的模型/检索请求。旧运行目录的 result.json 或临时恢复脚本不是此检查点格式，不能直接导入。源码/配置改变会拒绝重放，不自动把旧内容升级为新版本有效证据。
+`laboratory` 的 dry-run 和内置 fixture 后端支持相同恢复参数。fixture 重新计算的只是固定、无外部副作用的合成预测；恢复不会重新执行任意生成代码。Docker 后端仍明确拒绝 `--resume`，因为尚未实现容器任务身份与执行副作用恢复。旧运行目录的 result.json 或临时恢复脚本不是此检查点格式，不能直接导入。源码/配置改变会拒绝重放，不自动把旧内容升级为新版本有效证据。
+
+例如，先前以相同默认主题、配置和后端运行过 hybrid fixture，可在新目录继续：
+
+```bash
+python -m sage laboratory --mode offline --backend fixture --allow-execution \
+  --discussion-mode hybrid --resume projects/lab-before/checkpoint.json \
+  --output projects/lab-after
+```
+
+laboratory 运行时逐事件刷新 `audit.jsonl`，逐阶段更新 `result.partial.json`，并提前保存 `config.json`、`contract.json`。即使进程在写作中突然退出，已完成的执行尝试、章节和调用缓存仍可检查。`result.partial.json` 表示部分状态；最终 `result.json` 仅在控制器正常结束后写入。CLI 同时打印提案、执行和报告状态及有阶段信息的错误，不把 `proposal_failed` 和空错误列表作为唯一诊断。
+
+写作模型接收稳定的语义视图：最终提案、来源提取、负面筛查与已采纳要求；重复证据按 ID/哈希归并。调用日志、token 账单与恢复事件留在制品中，不反复拼入每个章节请求，避免重放日志变化使成功缓存失效或撑满提示词上限。
+
+讨论上下文协议为 `sage.discussion.context.v2`。互评者保留自己的完整证据，但对方仅提供当前提案和来源身份；来源可见性不会扩大引用权限。修订阶段只补充有条件可采纳及先前已采纳意见涉及的同伴证据。综合和写作阶段保留完整原始来源文本、当前提案、负面筛查摘要与明确要求，省去重复的模型生成解读；每张卡用 `view_scope` 标明已提供的范围，用摘要关联完整提取。完整来源解读、实验描述与旧版本仍在运行制品中，实验设计模块继续接收原始证据提取；不得把提示中省略的解释当作已经读过的事实。
+
+讨论提示使用标准 JSON Schema 明确每个字段的实际类型：ID 集合必须是唯一字符串数组，空集合写 `[]`；`requirements` 必须是对象数组，每个对象含 `critique_id` 和 `requirement`。单个字符串、字符串数组代替规划对象、null 或缺字段仍被拒绝，不做自动类型转换。此声明只改善模型的输出契约，不能替代后续来源归属、采纳关系与逐字要求的严格校验。
+
+代码生成与修复提示给出解析器实际接受的完整命令示例：开围栏是 `REPLACE` 或 `EDIT N M`，不能在 `python` 围栏外另放一个 REPLACE。解析失败时，修复器同时接收被拒命令、明确格式诊断和冻结合同；不会因为尚未产生可解析代码就丢掉原始程序。解析器仍严格拒绝多条命令、错误索引和嵌套围栏，所有失败照常消耗尝试额度。
+
+报告各节先生成一个不超过 1400 字符的简洁段落；越界回复会被拒绝并获得有界反馈，不自动截断。逐节请求只带章节状态和引用 ID 的提纲，不反复复制此前全部段落；完整草稿仍进入后续评审与修订。此约束限制写作链的上下文增长，并不把模型评论升级成已验证论文。
+
+发现阶段先对候选锚点进行主题相关性筛查，拒绝的条目会记录；短证据链可以由预算内的备用锚点替换。hybrid 在锚点数量不足时提前停止，生成后也会检查有效候选数量，避免先支付构思和两两比较成本才发现无法组成讨论角色。arXiv 查询提示明确要求 2–4 个主题关键词；检索与相关性仍需实际来源支持，不降低最短证据链要求。
 
 ## 讨论上下文与规划输出
 
@@ -299,3 +321,58 @@ live 仍必须显式 `--mode live --allow-live`。`--cache-only-retrieval` 禁�
 在原 retry_attempts 内，下一次请求可附加 `field_feedback_v1`，只包含程序自有规则说明，不包含被拒绝的回复，也不自动修改结果、放宽来源权限或强制采纳。每次实际请求哈希和预算仍记录；重复违反会按原上限失败。修订提示另区分无条件可引用来源和“只有明确采纳该 supported 意见后才可引用”的来源表；peer 内容可见不等于被授权引用。
 
 默认只记录安全诊断。显式 `--retain-rejected-responses` 才将大小受限的失败请求/回复保存在私有 checkpoint.rejections，权限 0600，带 stage/attempt/请求与响应哈希、代码身份和诊断；它们是未通过校验的不可信研究内容，不参与成功缓存，不能直接发布为脱敏日志。审计本身仍没有原文。没有 checkpoint 或回复超限时不会保存原文；标记 raw_retained_in_private_checkpoint=false。这些记录不能补回此前未保存的真实失败回复。
+# Research ideation upgrade (2026-10-18)
+
+For the recommended evidence-card input, semantic ranking, shared v3 discussion,
+bounded empty-query relaxation and optional real citation graph, see the
+[research ideation guide](ideation-evidence.md). Use `--profile research` on the
+proposal-only `run` entry. This explicitly opts into official paper-text retrieval;
+the existing standard profile remains compatible. No scientific quality gain is
+implied by the profile or by software regression results.
+
+## 工具结果归档与 team status 传输瘦身（autonomous 原生入口）
+
+原生 `sage autonomous` 的工具结果在写进 MCP/DSH 会话前经过大小检查，防止单个大结果反复撑满代理上下文：
+
+- **归档阈值**：任何工具结果 wire JSON 序列化后超过 `TOOL_OUTPUT_ARCHIVE_BYTES`（131072 字节，128KB）时，完整字节被归档到运行目录下 `native-run/.coral/public/tool-archive/tool-output-<sha256>.json`（目录 0755、文件 0644，代理 OS 用户可读；与 `service-private/tool-output-<sha256>.json` 管理器私有副本逐字节一致，事件仍记录私有副本）。传输响应替换为小的指针 JSON：`{"archived": true, "tool": ..., "full_bytes": N, "output_sha256": ..., "output_file": ".coral/public/tool-archive/tool-output-<sha256>.json", "summary": ...}`。`summary` 是确定性结构摘要（每个顶层键的类型与嵌套规模，list 给长度、dict 给键数、str 给长度），不调用模型。代理在原生 shell 里按 `output_file` 的相对路径读回完整内容并核对 SHA-256。阈值以下行为完全不变；`events.jsonl` 的 `tool_transfer_completed` 增加 `archived_file`/`archive_error` 字段，其余记录不变。MCP 客户端的 8MB 整体拒答保留为最后兜底。
+- **team status 紧凑版**：`team(action="status")` 默认返回紧凑视图（phase/round/next_action、本人 slot/role、proposal/review/revision/synthesis 计数、frozen 槽位列表及各冻结稿 SHA-256、incoming_issue 计数、peer_advice_audit 计数）加制品指针。全代理共享快照（不含任何槽位专属字段）写在 `native-run/.coral/public/team-snapshot.json`（0644，内容变化时更新），响应带 `snapshot_file`/`snapshot_sha256`。需要完整区块时一次性内联取回：`sections=["frozen_proposals","incoming_issues","syntheses","peer_advice_audits",...]` 或 `detail="full"`；共享文件刻意不含 own_proposal/incoming_issues/peer_advice_audits 等槽位专属数据，揭示屏障与原先的线上行为一致。`propose`/`review`/`revise`/`synthesize` 的响应不变。
+- **evidence 过滤**：`evidence` 接受可选 `paper_ids`（精确论文 ID 列表，只过滤 papers/cards 段；未知 ID 在 `unknown_paper_ids` 中单列）与 `include`（`papers`/`cards`/`reviews`/`searches` 子集，默认全部）。参数类型错误返回与现有工具一致的错误 JSON（ValueError 格式），不产生 500。
+
+以上均为确定性离线行为；归档只改变传输方式，完整字节仍保留在管理器私有副本与共享归档两处，`service-private` 的 0700 权限语义不变。
+
+## 评审 prompt 投影瘦身（autonomous 评审链）
+
+背景：实测 advisory review 第一阶段 prompt 达 2.06MB（约 50 万 token），其中 `RETRIEVED EVIDENCE` 段约 1.89MB——把整个 evidence store（papers/cards 的 claims + source_spans 原文 + searches 记录）原样 JSON 序列化塞进 prompt；第二阶段 `AUTHENTICATED REFERENCE CATALOG` 同样携带全部 in-scope source 的全部 span 原文。评审是 ID 级契约：第一阶段 `validate_review` 只校验 source_ids 是否属于该候选 scope；第二阶段 `validate_feedback` 的引用校验由宿主拿全量私有 catalog 查表（`manager_source_lookup_not_entailment`），原文由程序从冻结证据复制、从不采纳模型自写“引文”。因此模型侧看不看得到 span 原文与门的强度无关，原文宿主侧全量保留。
+
+- **stage 1（scientific_review，`review_prompt`）**：证据段改为确定性紧凑视图 `evidence_view`（`sage.autonomous.evidence-view.v1`）：按 paper 组织，只含 title、abstract（≤800 字符，超出截断加省略标记）、claims 按类别分组（9 个主类别；capsule 额外的 data/baselines 两类保留独立分组不被丢弃；每类 ≤6 条、每条 ≤300 字符）、未验证 inferences、reading_scope 摘要与 targeted passage 块 ID 清单；span 只以 ID 出现在 claims 的 `source_span_ids`；searches 一行式 `{query, purpose, 结果数}`，不嵌结果列表。体积目标：该段 ≤400KB，由构造证据 fixture（全量约 706KB）的回归测试断言，实测视图约 23KB、整份 stage-1 prompt 约 31KB。
+- **stage 2（novelty_feedback，`feedback_prompt`）**：catalog 索引化——每个候选 `closest_prior_art` 指向的最近 1–2 篇 source 保留 span 原文全文（句级比对需要）；其余 in-scope source 只给 claims 紧凑摘要（同 stage 1 格式）+ reference ID 清单；候选无 closest_prior_art 时全部 source 走摘要模式。`ALLOWED REFERENCE IDS BY CANDIDATE` 表照旧全量；宿主侧 `_reference_catalog(evidence)` 不变（仍全量、供校验与原文复制）。
+- **门的强度论证**：两段校验零改动、错误文案不变；校验所需的全部信息（scope、全量 catalog、原文）都在宿主侧冻结证据里，模型侧投影只是“进 prompt 的视图”。对模型从未以原文形式看到的 source 引用 reference ID，宿主照样解析并复制原文（`tests/test_autonomous_evidence_projection.py` 断言）。投影全部确定性实现、不调模型；宿主 evidence store、catalog 构建与请求留痕（`evidence_sha256` 等）不变。
+
+## 上下文预算与重启健壮性（autonomous 原生入口）
+
+### 原生 maxTokens 与评审链输出上限
+
+DSH provider 插件 `@deepseek-ai/dsh-llm-deepseek` 的默认 `maxTokens=256000` 是每请求输出硬上限，同时预占上下文窗口（输入预算 = 1048576 − maxTokens，默认只剩 792576）。实测（2026-10-19 无人干预运行，四会话 assistant 消息字节数按官方分词器折算）代理单请求输出 P100≈25k token，256000 白白让出约 19 万输入 token，还放大 provider 侧窗口超限概率。`research.patch.yml` 现在以 cordis 同 id 深合并写入 `- id: llm-deepseek / config: maxTokens: 65536`（P100×2 对齐 2 的幂），输入预算恢复到 983040。它与每次启动写到 `runtime-config` 的 `agent-default-model` provider/model 覆盖是两个不同入口，互不冲突；写出的 patch 有离线测试断言。
+
+评审链（scientific_review、novelty_feedback、peer_advice_audit 及其有界 JSON 格式修复）的单次输出上限统一为有名常量 `sage.config.REVIEW_MAX_OUTPUT_TOKENS = 49152`，`write-paper` 的默认 `max_tokens_per_call` 与 runner 启动容量预检引用同一常量，不再各自硬编码。依据：同一运行实测 novelty_feedback completion P100=32.1k token，距原 32 Ki 上限仅 2%；36 次评审 dispatch 中 25 次进入修复重试，与截断相关。容量预检恒等式 `text_tokens + max_tokens + 4096 ≤ 1048576` 不变（49152+4096 远小于窗口），`RunConfig` 对 `max_tokens_per_call ≤ 65536` 的校验也仍成立。
+
+### 重启逃生与终局策略
+
+背景：一次 autonomous 运行中槽 0 代理的 DSH 会话上下文超限（messages 约 116 万 token > 1048576）。重启决策在 CORAL 上游（每次用 `--session-id` 精确恢复同一坏会话、无最大次数；30 秒熔断窗口在 20–25 秒的重启节奏下数学上永不触发），SAGE 不改上游，在自己侧做逃生：
+
+- **重启台账**：manager 私有 `session-state`（0700）下每代理一个 `<agent-id>.restart-ledger.json`，含 `current_session_id`、`consecutive_failures`（连续 no_result/session_error/session_context_overflow 计数）、`fresh_session_count`、`history`（最近 50 条分类与时间摘要）。tmp+rename 防半写；JSON 损坏或属主/cwd 不符时视为无台账重新开始。
+- **分类增强**：`classify_exit` 在 stdout 判定之外，读取本次启动以来写入的 agent.err 尾部（err 文件跨重启累积，只读启动时记录的字节偏移之后的内容），命中 `maximum context length is 1048576` 或 `CONTEXT_WINDOW_EXCEEDED` 归类为 `session_context_overflow`。CORAL 把任何非 clean 分类都计为 crash，新枚举值与上游兼容。
+- **逃生**：某代理连续失败 ≥3 次 → 台账把旧 session_id 归档进 history → 删除 saved_session 指针文件 → 丢弃 CORAL 从旧日志提取的 resume id → 本次以新会话启动（native argv 不带 `--session-id`），并在续跑 prompt 末尾附一行 `[runtime status]` 说明（上下文超限、工作区文件完好、第几个新会话）。同时写 manager 私有的 `<agent-id>.restart-escape.json` receipt 留痕。被分类为 clean 的重启把 `consecutive_failures` 清零（`fresh_session_count` 保留，表示已换过几次会话）。
+- **终局**：`fresh_session_count ≥ 2` 且新会话仍连续失败 ≥3 次 → `start()` 抛 `RuntimeError`（消息含槽位、台账路径、最近失败史摘要）。该异常上抛会终止 CORAL manager、结束整个运行——这是用户已批准的终局策略：每个会话都以同样方式死亡的代理不应再继续消耗预算（CORAL 每次重启还重注约 861 token 的 Eval 反馈）。工作区文件保持原样供人工检查。
+- **熔断护栏（降频，非主修复）**：`task.yaml` 的 agents 显式设置 `restart_burst_threshold: 3`、`restart_burst_window: 120`、`restart_pause_seconds: 300`（满足上游 `pause_seconds ≥ window` 约束）。原默认 30 秒窗口在 20–25 秒节奏下永不触发，放宽后 CORAL 熔断才有机会暂停代理。
+- **检查边界**：台账与 receipt 都在 manager 私有的 session-state 目录（0700，agent OS 用户不可见、不可写）；整套机制只影响重启决策，不改写任何科研产物、评分或会话内容；终止运行不等于科学失败判定，最终 `result.json` 按未完成处理。
+
+## 阶段记忆纪律与会话轮换（autonomous 原生入口）
+
+背景：4 代理团队协议原来让槽位在 proposing→reviewing→revising→synthesizing 全程共用一个 DSH 会话，上下文线性累积（实测平均约 38 万 tokens/请求）。参照 AgentLab 的阶段间开新会话、以蒸馏笔记传递状态的做法，SAGE 在阶段屏障做"常规"会话轮换（不是失败逃生），并要求代理在过屏障前把阶段性认知外化。
+
+- **记忆外化检查点**：`team-workflow.md` 规定每个阶段屏障（proposal 冻结后、每轮 review 提交后、每次 revise 提交后、synthesize 前）必须把阶段性认知写入自己的 wiki 或共享 `notes/`（CORAL consolidate 语义：多于两条要点才写、带 creator frontmatter），并给出最低落盘清单（已读论文索引、方向决策、被否候选及原因、未决问题、receipt 指针）。`lifecycle.py` 的续跑 prompt 里固定带一行 barrier checkpoint 提醒。
+- **轮换标记**：`TeamBoard` 在 status 读取路径上为每个槽位、每个原生会话、每个阶段屏障发放一次性 `session_rotation` 标记（如 `review:r1`、`synthesize`；`propose` 不轮换，因为会话刚创建），标记 pending 期间随每次 status 重发，被消费即止；同一屏障不会轮换同一会话两次。槽位以新 session_id 重新注册（轮换或逃生后的新会话）时标记记录重置。
+- **执行链**：监督进程（agent OS 用户，永不接触 manager 私有状态）在停泊唤醒时发现标记 → 经 slot 鉴权的 `/tool` 请求 `rotate_session` → manager 侧 `TeamBoard.take_session_rotation` 校验并消费该一次性标记（无标记的请求一律拒绝，代理无法伪造轮换）→ `dsh_runtime.rotate_session(cwd, agent_id, session-state, reason=屏障名)` 在 manager 侧写台账 history（`session_rotated` 事件，含 reason）、累加独立的 `rotated_session_count`、删除 saved_session 指针、写 manager 私有 `<agent-id>.session-rotation.json` receipt → 监督进程随后以不带 `--session-id` 的 argv 启动全新原生会话，续跑 prompt 带 `[rotate-session]` 标记 + 一行由台账状态生成的话（被归档会话 id、第几次轮换、工作区文件完好、从 wiki/notes 恢复）。新会话的 session 事件经 manager 泵重新登记后，board 重置该槽位的轮换记录。
+- **与失败逃生的区别**：轮换不计入 `consecutive_failures`，不受 `RESTART_ESCAPE_FAILURES`/`FRESH_SESSION_LIMIT` 限制，也不消耗 `fresh_session_count`；它是预算纪律而非恢复策略。反之，逃生归档（`session_archived`）语义不变。
+- **异常与并发**：轮换请求被拒或失败时，监督进程退回普通的同会话续跑（旧行为），且不在监督侧重试轮换；指针删除后 DSH 启动失败按普通失败计入台账（下次 `plan_restart` 时，若 CORAL 从旧日志提取到已轮换会话的 id，拒绝复活并以 `rotation_reset` 直接开新会话，绕过"拒绝无身份新开"的守卫；无请求 id 时同理）。台账/receipt 全部在 manager 私有的 session-state 目录（0700），监督进程与代理同 OS 用户，因此任何台账写入都只发生在 manager 侧；整套机制只改启动决策与 prompt，不改写科研产物、评分或会话内容。

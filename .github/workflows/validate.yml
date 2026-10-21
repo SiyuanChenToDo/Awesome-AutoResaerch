@@ -16,6 +16,10 @@ jobs:
           python-version: '3.11'
       - name: Validate SAGE workflow, catalog, templates and regression tests
         run: python scripts/check.py
+      - name: Install optional owned research evaluator dependency
+        run: python -m pip install -r requirements-research.txt
+      - name: Exercise research evaluator contracts, leakage guards and statistics
+        run: python -m unittest discover -s tests -p test_research_closed_loop.py -v
       - name: Confirm generated catalog is reproducible
         run: |
           python scripts/catalog.py build

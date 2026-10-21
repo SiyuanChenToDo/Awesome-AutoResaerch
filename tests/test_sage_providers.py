@@ -212,6 +212,8 @@ class ModelTests(unittest.IsolatedAsyncioTestCase):
                 model = OpenAIModel.from_env(env={"SAGE_MAIN_MODEL": "deepseek-flash",
                     "SAGE_OPENAI_API_KEY": SECRET, "SAGE_MODEL_PROVIDER": "deepseek",
                     "SAGE_DEEPSEEK_THINKING": thinking})
+                model._tokenizer = types.SimpleNamespace(
+                    encode=lambda text, **kwargs: types.SimpleNamespace(ids=[1]))
                 self.assertEqual(await model.complete("ideas", "prompt", max_tokens=123), "bounded response")
             self.assertEqual(sdk.AsyncOpenAI.call_args.kwargs["base_url"], "https://api.deepseek.com")
             self.assertEqual(sdk.AsyncOpenAI.call_args.kwargs["max_retries"], 0)
@@ -236,6 +238,8 @@ class ModelTests(unittest.IsolatedAsyncioTestCase):
         client = fake_sdk_client(reply=sdk_reply("partial", reason="length"))
         model = OpenAIModel.from_env(env={"SAGE_MAIN_MODEL": "deepseek-flash",
             "OPENAI_API_KEY": SECRET, "SAGE_MODEL_PROVIDER": "deepseek"}, client=client)
+        model._tokenizer = types.SimpleNamespace(
+            encode=lambda text, **kwargs: types.SimpleNamespace(ids=[1]))
         with self.assertRaises(InvalidResponse):
             await model.complete("ideas", "prompt", max_tokens=123)
 
@@ -327,7 +331,7 @@ class ModelTests(unittest.IsolatedAsyncioTestCase):
         for tokens in (0, -1, 65_537, True, "100"):
             with self.subTest(tokens=tokens), self.assertRaises(ConfigurationError):
                 await model.complete("stage", "prompt", max_tokens=tokens)
-        for prompt in (None, "", " ", "x" * 250_001):
+        for prompt in (None, "", " ", "x" * 1_000_001):
             with self.subTest(prompt_type=type(prompt).__name__), self.assertRaises(ConfigurationError):
                 await model.complete("stage", prompt, max_tokens=10)
         client.chat.completions.create.assert_not_called()

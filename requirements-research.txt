@@ -1,0 +1,2 @@
+# Optional owned symbolic-regression evaluator and paired analysis runtime.
+numpy==2.2.6

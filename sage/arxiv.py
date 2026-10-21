@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from datetime import date
 from functools import partial
+import math
 import os
 import re
 import threading
@@ -17,7 +18,7 @@ from urllib.parse import urlencode, urlsplit
 import xml.etree.ElementTree as ET
 
 from .dates import publication_window, within_window
-from .errors import ConfigurationError, InvalidResponse, ProviderError, TransientProviderError
+from .errors import ConfigurationError, InvalidResponse, ProviderError, RateLimited, TransientProviderError
 from .providers import (HTTPResponse, _environment_proxy, _metadata_https_request,
                         _provider_error, _proxy_url, _timeout, SemanticScholarSource)
 from .types import Paper
@@ -72,19 +73,60 @@ def _paced_request(transport, url, headers, timeout, max_bytes):
 
 class ArxivSource:
     chain_relation = 'topic_time'
-    prompt_policy = ('Source policy: arXiv metadata/abstracts only, not verified peer review or full text. '
+
+    @staticmethod
+    def query_details(query):
+        """Describe the exact literal query; suggestions do not execute requests."""
+        terms = _terms(query)
+        return {'terms': terms, 'search_query': _query(query), 'operator': 'AND',
+                'within_keyword_guidance': 2 <= len(terms) <= 4,
+                'suggested_queries': ArxivSource.relax_queries(query)}
+
+    @staticmethod
+    def relax_queries(query):
+        terms = _terms(query)
+        return list(dict.fromkeys(' '.join(terms[:n]) for n in (4, 2) if len(terms) > n))
+    query_instructions = ('For arXiv, each query must contain 2-4 essential topic keywords only. '
+                          'Do not put evaluation constraints, full sentences, Boolean operators or API field syntax in queries. '
+                          'Use distinct concise queries for distinct aspects of the topic.')
+    prompt_policy = ('Source policy: arXiv search returns metadata/abstracts, not verified peer review. '
+                     'An attached evidence capsule may include separately retrieved article text; obey its scope and coverage. '
                      'No citation/reference graph is available. Topic/time chains do not establish influence '
                      'or that a later paper builds on an earlier one. Do not infer missing references. '
                      'For search query outputs use concise 2-4 keyword strings, no API syntax.\n\n')
 
-    def __init__(self, *, timeout=20.0, max_response_bytes=2_000_000, proxy_url=None, transport=None):
+    def __init__(self, *, timeout=20.0, max_response_bytes=2_000_000, proxy_url=None, transport=None,
+                 cooldown=None, before_request=None):
         self.timeout = _timeout(timeout)
         if type(max_response_bytes) is not int or not 1 <= max_response_bytes <= 10_000_000:
             raise ConfigurationError('Paper response byte limit must be from 1 to 10000000')
         _proxy_url(proxy_url)
         self.max_response_bytes = max_response_bytes
         self._transport = transport or partial(_metadata_https_request, proxy_url=proxy_url)
+        # The native service shares this state across its research slots. Access
+        # is inside the existing process-wide pacing lock, including queued IO.
+        self._cooldown = cooldown
+        self._before_request = before_request
         self.request_count = 0
+
+    def _request_with_cooldown(self, url, headers, timeout, max_bytes):
+        if self._before_request is not None:
+            self._before_request()
+        state = self._cooldown
+        if state is not None:
+            remaining = max(0.0, state.get('until', 0.0) - time.monotonic())
+            if state.get('paused') or remaining > 0:
+                error = RateLimited('arXiv retrieval paused after HTTP 429',
+                                    None if state.get('paused') else remaining)
+                error.network_request = False
+                raise error
+        reply = self._transport(url, headers, timeout, max_bytes)
+        if state is not None and isinstance(reply, HTTPResponse) and reply.status == 429:
+            delay = reply.retry_after_seconds
+            known = type(delay) in (int, float) and math.isfinite(delay) and delay >= 0
+            state.update(paused=not known,
+                         until=time.monotonic() + delay if known else 0.0)
+        return reply
 
     @classmethod
     def from_env(cls, *, env=None, **kwargs):
@@ -104,9 +146,11 @@ class ArxivSource:
                    'User-Agent': 'SAGE-research-workflow/1 (https://github.com/SiyuanChenToDo/Awesome-AutoResaerch)'}
         self.request_count += 1
         try:
-            reply = await asyncio.wait_for(asyncio.to_thread(_paced_request, self._transport, url,
+            transport = (self._request_with_cooldown
+                         if self._cooldown is not None or self._before_request is not None else self._transport)
+            reply = await asyncio.wait_for(asyncio.to_thread(_paced_request, transport, url,
                         headers, self.timeout, self.max_response_bytes), timeout=self.timeout)
-        except (ConfigurationError, InvalidResponse):
+        except (ConfigurationError, InvalidResponse, RateLimited):
             raise
         except Exception as error:
             raise _provider_error(error, 'arXiv provider') from None
@@ -114,11 +158,13 @@ class ArxivSource:
             raise InvalidResponse('arXiv provider returned an invalid response')
         if reply.status != 200:
             if reply.status == 429:
-                from .errors import RateLimited
                 raise RateLimited('arXiv provider rate limited (HTTP 429)', reply.retry_after_seconds)
             if 500 <= reply.status <= 599:
-                raise TransientProviderError(f'arXiv provider temporarily unavailable (HTTP {reply.status})')
-            raise ProviderError(f'arXiv provider request rejected (HTTP {reply.status})')
+                error = TransientProviderError(f'arXiv provider temporarily unavailable (HTTP {reply.status})')
+            else:
+                error = ProviderError(f'arXiv provider request rejected (HTTP {reply.status})')
+            error.http_status = reply.status
+            raise error
         if not isinstance(reply.body, bytes) or len(reply.body) > self.max_response_bytes:
             raise InvalidResponse('arXiv response exceeds byte/type limit')
         return [paper for paper in self.parse(reply.body, limit=limit) if within_window(paper, publication_date)]

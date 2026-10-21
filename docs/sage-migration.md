@@ -1,3 +1,5 @@
+> 2026-10-18 更新：本文保留早期 standard 迁移口径。research 配置的官方正文读取、证据卡、语义重排和共享讨论见[证据机制](ideation-evidence.md)；真实服务验证范围见[验证记录](validation-20261018.md)。
+
 # 从 CoI-Agent 到 SAGE：来源、模块与行为对照
 
 SAGE = **Scientific Agent for Grounded Exploration（基于证据探索的科研智能体）**。这是对 CoI-Agent 的研究提案链进行功能拆分、契约化和受限运行的改造，不是给上游仓库换名，也不声称复现其论文效果。

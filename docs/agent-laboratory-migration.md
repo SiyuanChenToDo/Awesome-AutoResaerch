@@ -29,6 +29,8 @@ Default dry-run generates and parses source and checks Python syntax without exe
 
 Generated candidate source is also saved as non-executed `candidates/attempt-N.py` files for review (do not execute it directly on the host). Output includes `result.json` (proposal, every candidate/repair, metrics, errors, report draft/review), `contract.json`, `config.json`, `audit.jsonl` and `report.md` plus `draft.md` when writing produces them. Output directories cannot be reused. Report Markdown is deterministic from recorded evidence; generated prose is separately labeled UNVERIFIED MODEL DRAFT in `draft.md` and JSON, with citation IDs preserved. No publication is performed.
 
+The CLI also persists an exact-input `checkpoint.json`, a phase-level `result.partial.json`, and a flushed audit stream during execution. Dry-run and the trusted, side-effect-free fixture backend support `--resume` into a new directory with matching code, inputs, limits, contract and backend. Docker resume is refused because remote execution identity and exactly-once side effects are not implemented. Completed provider responses are replayed with cumulative budgets; ambiguous in-flight requests still require explicit retry opt-in. See [recovery details](sage-runtime.md#可审计检查点与有界恢复).
+
 ## Explicit Docker development evaluation
 
 The optional Docker backend executes candidate source inside a locally available, separately reviewed container image. It does not execute generated code directly on the host, pull images, install dependencies or provision Docker. Docker and Python 3 inside the image are prerequisites. No Docker engine was available in this implementation environment: the adapter is tested with fake subprocesses, not a real container smoke test. These controls are defense-in-depth, not a verified security sandbox or protection against Docker/kernel vulnerabilities.
@@ -92,6 +94,8 @@ Budget/parse/provider failures can stop report generation; prior proposal/execut
 Run `python scripts/check.py` for the full offline regression suite. Those tests verify software contracts and fixtures, not live services, real research or scientific validity.
 
 ## Explicit coverage, not upstream parity
+
+2026-10-18 writing update: [`sage write-paper`](full-manuscript.md) now generates full manuscript prose, mathematical notation, checked bibliography references, measured table/figure assets, whole-paper reviews and section replacements, then emits LaTeX and Markdown. This supersedes the initial short-writing limitation described below. Compilation is performed separately with a local engine/editor, not by executing model commands. Upstream source snapshots remain unchanged.
 
 This is a first mechanism-level integration. It does not reproduce the complete original Agent Laboratory application.
 

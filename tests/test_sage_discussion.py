@@ -109,11 +109,17 @@ class HybridDiscussionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(default.discussion)
         self.assertIsNone(explicit.discussion)
         self.assertFalse(any(stage.startswith('discussion.') for stage, _ in default_model.requests))
-        self.assertEqual(default.usage['model_calls'], 44)
+        self.assertEqual(default.usage['model_calls'], 46)
         self.assertEqual(default.usage['search_calls'], 15)
         left, right = default.to_dict(), explicit.to_dict()
         left['usage'].pop('elapsed_seconds', None)
         right['usage'].pop('elapsed_seconds', None)
+        # Runs have different observation times; retain every scientific value,
+        # prompt, event kind and ordering in this baseline-equivalence check.
+        for document in (left, right):
+            for event in document['audit']:
+                event.pop('time', None)
+                event.pop('elapsed_seconds', None)
         self.assertEqual(left, right)
         self.assertEqual(default_model.requests, explicit_model.requests)
 
@@ -262,7 +268,8 @@ class HybridDiscussionTests(unittest.IsolatedAsyncioTestCase):
         result = await self.execute(model=model, source=OneAnchor(), config=config)
         self.assertEqual(result.status, 'stopped')
         self.assertEqual(result.errors[-1]['code'], 'no_evidence')
-        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(len(result.candidates), 0)
+        self.assertNotIn('literature.extract', model.calls)
         self.assertEqual(result.discussion['students'], [])
         self.assertFalse(any(stage.startswith('discussion.') for stage in model.calls))
         self.assertIsNone(result.experiment)
@@ -296,6 +303,25 @@ class HybridDiscussionTests(unittest.IsolatedAsyncioTestCase):
         candidate.chain.trend = 'Modified chain after the run'
         candidate.rejected_attempts.append({'idea': 'Modified rejection'})
         self.assertEqual(student['original_candidate'], original)
+
+    async def test_v3_shared_portfolios_allow_role_lenses_without_independence_claim(self):
+        class SharedPortfolio(FixtureSource):
+            async def related(self, paper, *, direction, limit):
+                if direction == 'citations' and paper.paper_id.endswith('-anchor'):
+                    family = 'b' if paper.paper_id == 'fixture-a-anchor' else 'a'
+                    return [self.papers[f'fixture-{family}-anchor']]
+                return []
+        model=RecordingModel()
+        config=RunConfig(discussion_mode='hybrid',discussion_prompt_version='v3',max_chain_length=2)
+        result=await self.execute(model=model,source=SharedPortfolio(),config=config)
+        self.assertTrue(result.status.startswith('completed'),result.errors)
+        diversity=result.discussion['source_diversity']
+        self.assertFalse(diversity['portfolios_distinct'])
+        self.assertEqual(diversity['exclusive_source_counts'],[0,0])
+        self.assertIn('not_established',diversity['independence'])
+        self.assertEqual(model.calls['discussion.develop'],2)
+        self.assertIsNotNone(result.experiment)
+        self.assert_accounted(result,config)
 
     async def test_unknown_critiques_cannot_become_accepted_requirements(self):
         def unknown(payload, occurrence):

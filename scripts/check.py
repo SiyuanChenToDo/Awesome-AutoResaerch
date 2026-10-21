@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 
-from catalog import ROOT, build_records, check_links, read_json, render_views, validate_catalog
+from catalog import ROOT, build_records, check_links, read_json, render_views, validate_catalog, repository_files
 from research import check_project, create_project
 
 
@@ -25,9 +25,7 @@ def main():
                 errors.append(f"Stale generated view: catalog/{path.name}; run catalog.py build")
     for project in sorted((ROOT / "examples").glob("*/project.json")):
         errors.extend(f"{project.parent.name}: {error}" for error in check_project(project.parent))
-    for path in ROOT.rglob("*.json"):
-        if any(part in {"projects", ".git", "__pycache__"} for part in path.relative_to(ROOT).parts):
-            continue
+    for path in repository_files(ROOT, '*.json'):
         try:
             read_json(path)
         except (OSError, ValueError) as error:
