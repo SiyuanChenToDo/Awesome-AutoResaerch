@@ -35,11 +35,24 @@ class Grader(TaskGrader):
         if result.get('error'):
             raise RuntimeError('Research service grading failed: ' + result['error'])
         feedback = json.dumps(result, ensure_ascii=False)
+        # The service normally always includes 'score', but the wire response
+        # must never crash the grader: a malformed or partial response is an
+        # operational failure sentinel, not an exception (observed in the wild
+        # as KeyError escaping evaluate() during finalization).
+        score_value = result.get('score')
+        if not isinstance(score_value, (int, float)):
+            return ScoreBundle(scores={'proposal': Score(0.0, 'proposal',
+                'Operational failure: research service returned no numeric score; no scientific rating')},
+                aggregated=0.0, feedback=feedback,
+                metadata={'evaluation_status': result.get('evaluation_status') or 'malformed_service_response',
+                          'scientific_score': None,
+                          'score_semantics': 'operational_failure_sentinel_not_scientific_rating',
+                          'scientific_validation': 'not_performed', 'independent_acceptance': False})
         completed = result.get('evaluation_status', 'completed') == 'completed' and not result.get('contract_errors')
-        return ScoreBundle(scores={'proposal': Score(result['score'], 'proposal_readiness',
+        return ScoreBundle(scores={'proposal': Score(score_value, 'proposal_readiness',
             ('Advisory model opinion after source/testability checks; not scientific validation' if completed else
              'Operational failure sentinel; no scientific rating was established'))},
-            aggregated=result['score'], feedback=feedback,
+            aggregated=score_value, feedback=feedback,
             metadata={'scientific_validation': 'not_performed', 'independent_acceptance': False,
                       'evaluation_status': result.get('evaluation_status'),
                       'scientific_score': result.get('scientific_score') if completed else None})

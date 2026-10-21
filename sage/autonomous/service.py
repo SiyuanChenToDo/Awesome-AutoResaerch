@@ -785,12 +785,18 @@ class ResearchService:
         report_sha = hashlib.sha256(report_bytes).hexdigest()
         report_file = f'report-{sha}-{report_sha}.md'
         atomic_bytes(self.private / report_file, report_bytes)
-        record.update(score=receipt['review']['score'], review_id=receipt['id'],
-                      scientific_score=receipt['review']['score'], evaluation_status='completed',
+        review_score = (receipt.get('review') or {}).get('score')
+        if not isinstance(review_score, (int, float)):
+            return {'score': 0.0, 'scientific_score': None, 'evaluation_status': 'review_receipt_malformed',
+                    'contract_errors': [], 'receipt': receipt, 'scientific_validation': 'not_performed',
+                    'independent_acceptance': False,
+                    'score_semantics': 'operational_failure_sentinel_not_scientific_rating'}
+        record.update(score=review_score, review_id=receipt['id'],
+                      scientific_score=review_score, evaluation_status='completed',
                       report_sha256=report_sha, report_file=report_file)
         with self.lock:
             self.grades.append(record); self.save()
-        return {'score': receipt['review']['score'], 'scientific_score': receipt['review']['score'],
+        return {'score': review_score, 'scientific_score': review_score,
                 'evaluation_status': 'completed', 'contract_errors': [], 'receipt': receipt,
                 'scientific_validation': 'not_performed', 'independent_acceptance': False}
 
