@@ -67,8 +67,9 @@ class ToolOutputArchiveTests(unittest.TestCase):
         self.assertEqual(archive.read_bytes(),
                          (self.service.private / name).read_bytes(),
                          'shared archive must match the manager-private copy')
-        self.assertEqual(stat.S_IMODE(archive.stat().st_mode), 0o644)
-        self.assertEqual(stat.S_IMODE(archive.parent.stat().st_mode), 0o755)
+        if os.name != 'nt':
+            self.assertEqual(stat.S_IMODE(archive.stat().st_mode), 0o644)
+            self.assertEqual(stat.S_IMODE(archive.parent.stat().st_mode), 0o755)
         completed = next(event for event in self.events()
                          if event['kind'] == 'tool_transfer_completed')
         self.assertEqual(completed['output_file'], name)
@@ -187,7 +188,8 @@ class TeamStatusCompactTests(unittest.TestCase):
         self.assertRegex(status['snapshot_sha256'], '^[0-9a-f]{64}$')
         stored = self.snapshot_path()
         self.assertTrue(stored.is_file())
-        self.assertEqual(stat.S_IMODE(stored.stat().st_mode), 0o644)
+        if os.name != 'nt':
+            self.assertEqual(stat.S_IMODE(stored.stat().st_mode), 0o644)
         body = stored.read_bytes()
         self.assertEqual(hashlib.sha256(body).hexdigest(), status['snapshot_sha256'])
         shared = json.loads(body)

@@ -21,7 +21,9 @@ def main():
         render_views(temporary, build_records(ROOT))
         for path in (temporary / "catalog").iterdir():
             target = ROOT / "catalog" / path.name
-            if not target.exists() or path.read_bytes() != target.read_bytes():
+            # Generated text views may be checked out with CRLF on Windows.
+            # Source archives retain their separate byte-exact hash checks.
+            if not target.exists() or path.read_text(encoding='utf-8') != target.read_text(encoding='utf-8'):
                 errors.append(f"Stale generated view: catalog/{path.name}; run catalog.py build")
     for project in sorted((ROOT / "examples").glob("*/project.json")):
         errors.extend(f"{project.parent.name}: {error}" for error in check_project(project.parent))

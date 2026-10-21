@@ -3,7 +3,7 @@ import copy
 import json
 import unittest
 
-from sage.autonomous.novelty import (FEEDBACK_VERSION, advice_targets,
+from sage.autonomous.novelty import (FEEDBACK_VERSION, advice_targets, reference_handle,
                                      feedback_prompt, validate_feedback)
 
 
@@ -50,6 +50,19 @@ def novelty_fixture():
 
 
 class NoveltyFeedbackTests(unittest.TestCase):
+    def test_qualified_handle_cannot_be_rebound_to_same_named_span_on_other_paper(self):
+        document, evidence, scopes, review, value = novelty_fixture()
+        evidence['cards']['p2'] = copy.deepcopy(evidence['cards']['p1'])
+        evidence['cards']['p2']['source_spans']['section:P1']['text'] = 'Different paper and claim.'
+        claim = value['candidate_assessments'][1]['claims'][0]
+        claim['source_refs'] = [{'source_id': 'p2', 'reference_id': reference_handle('p1', 'card:section:P1')}]
+        with self.assertRaises(ValueError):
+            validate_feedback(value, document, scopes, evidence, review)
+        claim['source_refs'][0]['reference_id'] = reference_handle('p2', 'card:section:P1')
+        result = validate_feedback(value, document, scopes, evidence, review)
+        self.assertEqual(result['candidate_assessments'][1]['claims'][0]['source_quotations'][0]['quotation'],
+                         'Different paper and claim.')
+
     def setUp(self):
         self.document, self.evidence, self.scopes, self.review, self.value = novelty_fixture()
 

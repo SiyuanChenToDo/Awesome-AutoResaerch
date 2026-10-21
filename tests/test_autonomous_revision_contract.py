@@ -68,6 +68,9 @@ class RevisionContractTests(unittest.TestCase):
                 after = copy.deepcopy(before)
                 after[field] = ([{'candidate_id': 'C1', 'objection': 'Fixture opposite objection'}]
                                 if field == 'open_objections' else 'Fixture opposite context')
+                if field == 'shared_scientific_context':
+                    before[field] = {'definitions': 'Fixture original context'}
+                    after[field] = {'definitions': 'Fixture opposite context'}
                 after['revision_record'] = record()
                 projected, _ = scientific_input(after, 'Fixture topic')
                 self.assertIn(field, projected['scientific_context'])

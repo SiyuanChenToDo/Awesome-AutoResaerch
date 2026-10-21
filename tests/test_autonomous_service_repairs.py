@@ -398,6 +398,25 @@ class AutonomousServiceRepairTests(unittest.TestCase):
         self.assertEqual((self.service.private / record['report_file']).read_bytes(), report)
         self.assertEqual(record['report_sha256'], hashlib.sha256(report).hexdigest())
 
+    def test_preflight_matches_formal_gate_without_model_or_attempt_and_invalidates_edits(self):
+        primary, synthesis = self.complete_team_without_issues()
+        rendered = self.service.call('report', {'artifact_path': str(primary)}, slot=0)
+        copied = self.checkout(primary, Path(rendered['path']).read_bytes())
+        pre = self.service.call('preflight', {'artifact_path': str(primary)}, slot=0)
+        self.assertFalse(pre['ready_for_formal_grade'])
+        self.assertEqual(self.service.formal_attempts, 0)
+        formal = asyncio.run(self.service.grade(copied, agent_id='researcher-0'))
+        self.assertEqual(pre['contract_errors'], formal['contract_errors'])
+        self.seed_advisory_receipts(synthesis['primary_sha256'])
+        ready = self.service.call('preflight', {'artifact_path': str(primary)}, slot=0)
+        self.assertTrue(ready['ready_for_formal_grade'])
+        before = self.service.formal_attempts
+        primary.write_bytes(primary.read_bytes() + b'\n')
+        changed = self.service.call('preflight', {'artifact_path': str(primary)}, slot=0)
+        self.assertFalse(changed['ready_for_formal_grade'])
+        self.assertNotEqual(changed['primary_sha256'], ready['primary_sha256'])
+        self.assertEqual(self.service.formal_attempts, before)
+
     def test_failed_formal_review_spends_attempt_preserves_partial_and_never_exports(self):
         primary, synthesis = self.complete_team_without_issues()
         rendered = self.service.call('report', {'artifact_path': str(primary)}, slot=0)

@@ -46,6 +46,24 @@ def historical_shape_fixture():
 
 
 class ScientificAllowlistTests(unittest.TestCase):
+    def test_shared_definitions_and_calibration_survive_without_nested_assessment(self):
+        primary = historical_shape_fixture()
+        primary['shared_scientific_context'] = {
+            'novelty_operationalization': {'threshold': 0.92, 'unit': 'cosine'},
+            'computational_envelope': {'gpu_hours': 80},
+            'evidence_policy': 'Only source-bound claims',
+            'verification_boundary': 'No experiments yet',
+            'author_score': 0.999999}
+        primary['candidates'][0]['calibration_plan'] = {'pilot': 'Estimate measurement reliability'}
+        document, ledger = scientific_input(primary, 'Synthetic original problem')
+        shared = document['scientific_context']['shared_scientific_context']
+        self.assertEqual(shared['novelty_operationalization']['threshold'], 0.92)
+        self.assertEqual(document['candidates'][0]['calibration_plan'], primary['candidates'][0]['calibration_plan'])
+        self.assertEqual(ledger['omitted_shared_context_fields'], ['author_score'])
+        for prompt in self.prompts(document):
+            self.assertNotIn('0.999999', prompt)
+            self.assertIn('Estimate measurement reliability', prompt)
+
     def prompts(self, document):
         # Both stages receive exactly this common scientific projection.
         return (review_prompt(document, {}),

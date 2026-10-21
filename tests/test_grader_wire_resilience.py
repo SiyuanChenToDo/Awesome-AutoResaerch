@@ -83,6 +83,7 @@ class GraderWireResilienceTests(unittest.TestCase):
     def _evaluate(self, wire_obj):
         grader, socket_factory = self._grader(json.dumps(wire_obj, ensure_ascii=False))
         with mock.patch.object(self.grader_module.socket, 'socket', socket_factory), \
+                mock.patch.object(self.grader_module.socket, 'AF_UNIX', 1, create=True), \
                 mock.patch.dict(os.environ, {'SAGE_GRADER_SOCKET': '/tmp/fake-grader.sock'}):
             return grader.evaluate()
 
@@ -93,6 +94,14 @@ class GraderWireResilienceTests(unittest.TestCase):
         self.assertEqual(bundle.aggregated, 0.0)
         self.assertEqual(bundle.metadata['scientific_validation'], 'not_performed')
         self.assertIn('operational_failure_sentinel', bundle.metadata['score_semantics'])
+
+    def test_nonfinite_boolean_out_of_range_and_nonobject_are_sentinels(self):
+        for value in ([1], None, {'score': True}, {'score': float('nan')},
+                      {'score': float('inf')}, {'score': -1}, {'score': 1.1}):
+            with self.subTest(value=value):
+                result = self._evaluate(value)
+                self.assertEqual(result.aggregated, 0)
+                self.assertIsNone(result.metadata['scientific_score'])
 
     def test_response_with_truthy_error_still_raises_runtimeerror(self):
         with self.assertRaises(RuntimeError):

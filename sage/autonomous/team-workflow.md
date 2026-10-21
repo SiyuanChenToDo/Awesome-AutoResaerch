@@ -200,6 +200,26 @@ again after any later file change, including advisory or formal review repairs,
 before the next `coral eval -m "..."`. A past synthesis receipt does not authorize
 grading a changed file. The grader also checks provenance and candidate contracts.
 
+Before EVERY `coral eval`, call `mcp__sage_research__preflight(artifact_path=...)`.
+This zero-model check uses the same current-byte contract checks as formal grading.
+Resolve its contract_errors and inspect projection_audit for omitted science; do
+not submit until ready_for_formal_grade is true. Recheck after every JSON/report
+change. It neither grants scientific acceptance nor consumes a formal attempt.
+Use documented scientific fields: shared definitions/protocols belong in
+shared_protocol, or shared_scientific_context with novelty_operationalization,
+computational_envelope, evidence_policy and verification_boundary. Candidate
+calibration_plan is transmitted. Unknown author containers are excluded from
+blind review; move essential scientific content into protocol/definitions rather
+than placing it in assessment or release metadata. Never include past grades.
+
+Check the scientific protocol across ALL fields before registering a revision:
+metric attainable range versus decision threshold; fraction of successful samples
+versus probability of at least one success; conditional novelty versus joint
+correct-and-novel yield; power effect size versus the actual decision threshold;
+raw transfer ratios versus chance baselines. A throughput assumption is an estimate
+unless backed by an actual measurement receipt. Accepted advice is not proof these
+constraints are satisfied. Report unresolved contradictions, do not invent results.
+
 After the first registered synthesis, every changed file must include a
 `revision_record` following `protocol_schema().revision_contract`. Bind its
 `parent_sha256` to the immediately preceding synthesis, enumerate every actually

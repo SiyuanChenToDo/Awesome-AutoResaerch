@@ -152,6 +152,13 @@ Follow the full ARIS scientific workflow, not just its review gate:
 
 ## Explicit API-only adaptation of ARIS
 
+Before every formal `coral eval`, call `mcp__sage_research__preflight` with the
+exact current primary file. Resolve its contract_errors, inspect scientific
+projection omissions, and repeat after every edit. This zero-model check uses
+the same submission gates and does not consume a formal attempt. It is not a
+scientific approval. Candidate calibration_plan and the typed shared scientific
+context are review inputs; author scores and release metadata are not.
+
 ARIS's original cross-family acceptance gate must remain unchanged. A single
 DeepSeek API cannot satisfy it. Our fresh-context critiques are substantive but
 same-family advisory reviews. Record ARIS independent acceptance as

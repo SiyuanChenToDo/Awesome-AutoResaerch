@@ -4,6 +4,7 @@ This executes no agent code. Scientific opinions come from a fresh provider call
 the deterministic source checks and that opinion are reported separately.
 """
 import json
+import math
 import os
 import socket
 from pathlib import Path
@@ -32,6 +33,8 @@ class Grader(TaskGrader):
             connection.sendall(payload)
             with connection.makefile('rb') as response:
                 result = json.loads(response.readline(2_000_001))
+        if not isinstance(result, dict):
+            result = {'evaluation_status': 'malformed_service_response'}
         if result.get('error'):
             raise RuntimeError('Research service grading failed: ' + result['error'])
         feedback = json.dumps(result, ensure_ascii=False)
@@ -40,7 +43,7 @@ class Grader(TaskGrader):
         # operational failure sentinel, not an exception (observed in the wild
         # as KeyError escaping evaluate() during finalization).
         score_value = result.get('score')
-        if not isinstance(score_value, (int, float)):
+        if type(score_value) not in (int, float) or not math.isfinite(score_value) or not 0 <= score_value <= 1:
             return ScoreBundle(scores={'proposal': Score(0.0, 'proposal',
                 'Operational failure: research service returned no numeric score; no scientific rating')},
                 aggregated=0.0, feedback=feedback,

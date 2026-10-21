@@ -695,6 +695,70 @@ class ResearchService:
         finally:
             await self.close_model(model)
 
+    def submission_checks(self, raw, document, report_path, allowed_root, agent_id):
+        """One authoritative, zero-model check used by preflight AND the grader."""
+        sha = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+        with self.lock:
+            papers, cards, searches, reviews = copy.deepcopy((self.papers, self.cards, self.searches, self.reviews))
+        errors = candidate_errors(document, papers, cards)
+        if self.require_protocol:
+            errors.extend(self.selected_protocol_errors(document))
+        if self.team:
+            with self.team_lock:
+                errors.extend(self.team.grade_errors(document, sha))
+                coordinator = self.team.state['roster'].get('0', {}).get('agent_id')
+                if not coordinator or agent_id != coordinator:
+                    errors.append('Only the manager-identified coordinator may submit a team synthesis')
+                if (self.require_protocol and self.team.state['syntheses'] and
+                        sha != self.team.state['syntheses'][-1]['primary_sha256']):
+                    errors.append('Submit only the latest registered synthesis; restoring an old method requires a new evidence-led revision record')
+        report_bytes, report_audit = None, None
+        version = self.synthesis_version(sha)
+        try:
+            report_bytes = read_confined(report_path, allowed_root).encode('utf-8')
+            report_audit = validate_report(raw, report_bytes, synthesis_version=version)
+            errors.extend(report_audit['errors'])
+        except (ValueError, UnicodeError):
+            errors.append('Write a current, bound UTF-8 CONJECTURES.md using the report tool before submitting')
+        purposes = {s['purpose'] for s in searches if s['results']}
+        if len(papers) < 12:
+            errors.append('Retrieve at least twelve actual papers from more than one query')
+        if len(cards) < 6:
+            errors.append('Read at least six papers with quote-checked capsules')
+        if not {'novelty', 'counterevidence'} <= purposes:
+            errors.append('Perform nonempty novelty and counterevidence searches; rewrite failed/empty queries')
+        if not reviews:
+            errors.append('Obtain a fresh-context critique and revise before grading')
+        if not errors:
+            from .gates import advisory_errors
+            errors.extend(advisory_errors(sha, reviews, self.team))
+        return errors, report_bytes, report_audit, version
+
+    def preflight(self, artifact_path, *, slot=None):
+        root = self.run_root / 'native-run' / 'agents'
+        agent_id = None
+        if self.team:
+            with self.team_lock:
+                self.team.status(slot)
+                identity = self.team.state['roster'][str(slot)]
+                root, agent_id = identity['cwd'], identity['agent_id']
+        raw, document = read_primary(artifact_path, root)
+        errors, _, report_audit, version = self.submission_checks(
+            raw, document, Path(artifact_path).parent / 'CONJECTURES.md', root, agent_id)
+        scientific, ledger = scientific_input(document, self.topic)
+        with self.lock:
+            remaining = max(0, self.max_formal_attempts - self.formal_attempts)
+        if not remaining:
+            errors.append('Formal attempt budget exhausted; do not submit again')
+        return {'ready_for_formal_grade': not errors, 'contract_errors': errors,
+                'primary_sha256': hashlib.sha256(raw.encode('utf-8')).hexdigest(),
+                'synthesis_version': version, 'report_audit': report_audit,
+                'scientific_input': scientific, 'projection_audit': ledger,
+                'formal_attempts_remaining': remaining, 'model_calls': 0,
+                'scientific_validation': 'not_performed',
+                'instruction': 'Resolve these checks, then rerun preflight after EVERY file change. '
+                               'This receipt does not reserve a grade or bypass grading checks.'}
+
     async def grade(self, path, agent_id=None):
         checkout_root = self.run_root / 'native-run' / '.coral' / 'private' / 'grader_checkouts'
         raw = read_confined(path, checkout_root)
@@ -723,39 +787,9 @@ class ResearchService:
             return {'score': 0.0, 'scientific_score': None, 'evaluation_status': 'contract_failed',
                     'contract_errors': errors, 'score_semantics': 'operational_failure_sentinel_not_scientific_rating',
                     'scientific_validation': 'not_performed'}
-        errors = candidate_errors(document, papers, cards)
-        if self.require_protocol:
-            errors.extend(self.selected_protocol_errors(document))
-        if self.team:
-            with self.team_lock:
-                errors.extend(self.team.grade_errors(document, sha))
-                coordinator = self.team.state['roster'].get('0', {}).get('agent_id')
-                if not coordinator or agent_id != coordinator:
-                    errors.append('Only the manager-identified coordinator may submit a team synthesis')
-                if (self.require_protocol and self.team.state['syntheses'] and
-                        sha != self.team.state['syntheses'][-1]['primary_sha256']):
-                    errors.append('Submit only the latest registered synthesis; restoring an old method requires a new evidence-led revision record')
         report_path = Path(path).parent / 'CONJECTURES.md'
-        report_bytes, report_audit = None, None
-        version = self.synthesis_version(sha)
-        try:
-            report_bytes = read_confined(report_path, checkout_root).encode('utf-8')
-            report_audit = validate_report(raw, report_bytes, synthesis_version=version)
-            errors.extend(report_audit['errors'])
-        except (ValueError, UnicodeError):
-            errors.append('Write a current, bound UTF-8 CONJECTURES.md using the report tool before submitting')
-        purposes = {s['purpose'] for s in searches if s['results']}
-        if len(papers) < 12:
-            errors.append('Retrieve at least twelve actual papers from more than one query')
-        if len(cards) < 6:
-            errors.append('Read at least six papers with quote-checked capsules')
-        if not {'novelty', 'counterevidence'} <= purposes:
-            errors.append('Perform nonempty novelty and counterevidence searches; rewrite failed/empty queries')
-        if not reviews:
-            errors.append('Obtain a fresh-context critique and revise before grading')
-        if not errors:
-            from .gates import advisory_errors
-            errors.extend(advisory_errors(sha, reviews, self.team))
+        errors, report_bytes, report_audit, version = self.submission_checks(
+            raw, document, report_path, checkout_root, agent_id)
         record = {'commit': commit, 'agent_id': agent_id, 'primary_sha256': sha, 'time': now(), 'contract_errors': errors,
                   'synthesis_version': version, 'report_audit': report_audit,
                   'candidate_count': len(document['candidates']) if isinstance(document.get('candidates'), list) else 0, 'score': 0.0}
@@ -1226,6 +1260,8 @@ class ResearchService:
             return {**protocol_descriptor(), 'revision_contract': revision_descriptor()}
         if tool == 'report':
             return self.report(**arguments, slot=slot)
+        if tool == 'preflight':
+            return self.preflight(**arguments, slot=slot)
         if tool == 'evidence':
             paper_ids = arguments.get('paper_ids')
             include = arguments.get('include')

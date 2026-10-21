@@ -414,6 +414,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='sage', description='SAGE — Scientific Agent for Grounded Exploration')
     parser.add_argument('--version', action='version', version=f'SAGE {__version__}')
     sub = parser.add_subparsers(dest='command', required=True)
+    console = sub.add_parser('console', help='Local research console; use an SSH tunnel for remote access')
+    console.add_argument('--projects', type=Path, default=ROOT / 'projects')
+    console.add_argument('--port', type=int, default=8765)
+    console.add_argument('--allow-live', action='store_true', help='Permit explicit UI starts with finite budgets')
     autonomous=sub.add_parser('autonomous',help='Native CORAL + ARIS + DeepSeek: autonomous evidence-scoped conjecture discovery')
     autonomous.add_argument('--output',type=Path,required=True)
     autonomous.add_argument('--topic',default='')
@@ -490,6 +494,9 @@ def main(argv=None):
     writer.add_argument('--allow-live',action='store_true')
     args = parser.parse_args(argv)
     try:
+        if args.command == 'console':
+            from .console import serve
+            return serve(args)
         if args.command == 'doctor':
             return doctor()
         if args.command == 'autonomous':

@@ -145,24 +145,24 @@ def stage_two_fixture():
 
 
 class StageTwoCatalogProjectionTests(unittest.TestCase):
-    def test_only_closest_prior_art_carries_original_text(self):
+    def test_every_selectable_reference_carries_exact_text_once(self):
         document, evidence = stage_two_fixture()
         prompt = feedback_prompt(document, evidence, {'candidate_reviews': [], 'issues': []})
         self.assertIn(P2_SPAN_ORIGINAL, prompt)      # closest source: full text kept
-        self.assertNotIn(P1_SPAN_ORIGINAL, prompt)   # scoped but not closest: summarized
-        self.assertNotIn(P3_SPAN_ORIGINAL, prompt)   # null closest_prior_art: all summarized
+        self.assertEqual(prompt.count(P1_SPAN_ORIGINAL), 1)   # scoped but not closest: summarized
+        self.assertEqual(prompt.count(P3_SPAN_ORIGINAL), 1)   # null closest_prior_art: all summarized
         self.assertIn('Fixture p1 method claim.', prompt)   # summary still names the claim
         self.assertIn('Fixture p3 method claim.', prompt)
         self.assertIn('card:s1-c1:P1', prompt)       # reference IDs remain listed
         self.assertIn('ALLOWED REFERENCE IDS BY CANDIDATE', prompt)
         catalog = json.loads(prompt.split('candidate source scope still applies):\n', 1)[1]
                          .split('\nALLOWED REFERENCE IDS BY CANDIDATE')[0])
-        self.assertEqual(catalog['p2']['card:s1-c1:P1']['text'], P2_SPAN_ORIGINAL)
-        self.assertEqual(catalog['p1']['claims']['method'][0]['claim'], 'Fixture p1 method claim.')
-        self.assertEqual(catalog['p1']['reference_ids'], ['card:s1-c1:P1'])
-        self.assertNotIn('text', json.dumps(catalog['p1']['claims']))
+        from sage.autonomous.novelty import reference_handle
+        self.assertEqual(catalog['p2'][reference_handle('p2', 'card:s1-c1:P1')]['text'], P2_SPAN_ORIGINAL)
+        self.assertEqual(catalog['p1'][reference_handle('p1', 'card:s1-c1:P1')]['text'], P1_SPAN_ORIGINAL)
+        self.assertNotEqual(next(iter(catalog['p1'])), next(iter(catalog['p2'])))
 
-    def test_host_gate_resolves_references_hidden_from_the_model_view(self):
+    def test_host_gate_resolves_legacy_references_to_visible_text(self):
         document, evidence = stage_two_fixture()
         scopes = source_scope(document, evidence['papers'])
         value = {'feedback_version': FEEDBACK_VERSION, 'candidate_assessments': [
@@ -187,7 +187,7 @@ class StageTwoCatalogProjectionTests(unittest.TestCase):
             'summary': 'Fixture projection-independent validation'}
         review = fixture_review(document)
         prompt = feedback_prompt(document, evidence, review)
-        self.assertNotIn(P1_SPAN_ORIGINAL, prompt)
+        self.assertEqual(prompt.count(P1_SPAN_ORIGINAL), 1)
         result = validate_feedback(value, document, scopes, evidence, review)
         quotations = result['candidate_assessments'][0]['claims'][0]['source_quotations']
         by_source = {item['source_id']: item['quotation'] for item in quotations}

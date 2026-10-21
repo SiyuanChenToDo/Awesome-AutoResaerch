@@ -9,7 +9,7 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timezone
 
-from .novelty import _reference_catalog
+from .novelty import _reference_catalog, qualified_catalog, resolve_reference
 from .repair import ReviewStageError, validated_completion
 from .review import canonical_json, input_digest, scientific_input, source_scope
 
@@ -93,7 +93,9 @@ establish that its alleged problem was valid. Propose no new score or confidence
 
 Use ONLY the explicitly allowed source IDs for that issue. A peer's new catalogued
 counterevidence is allowed for its own issue, not all other candidates. Reference IDs
-come from the authenticated catalog; a paper ID is not a reference ID. The host copies
+come from the authenticated catalog: copy the complete ref: handle and its source_id
+together. A paper ID is not a reference ID. Empty catalogs require unknown for factual
+claims; do not borrow another paper's span. The host copies
 exact original text. Do not retype or invent quotations, sources or reference IDs.
 Factual supported/disputed problems require original-text references. Logical or
 methodological objections may use no source when reasoning from the frozen proposal.
@@ -109,7 +111,7 @@ RESPONSE SCHEMA:
             'papers': view.get('papers', {}),
             'reading_scopes': {sid: card.get('source_scope', 'unspecified')
                                for sid, card in view.get('cards', {}).items()}}) + \
-        '\nAUTHENTICATED ORIGINAL REFERENCE CATALOG:\n' + canonical_json(_reference_catalog(view))
+        '\nAUTHENTICATED ORIGINAL REFERENCE CATALOG:\n' + canonical_json(qualified_catalog(_reference_catalog(view)))
 
 
 def validate_peer_advice(value, document, evidence, issues):
@@ -151,6 +153,7 @@ def validate_peer_advice(value, document, evidence, issues):
             if not isinstance(ref, dict) or set(ref) != {'source_id', 'reference_id'}:
                 raise ValueError('source_refs require source_id and reference_id only')
             sid, rid = ref['source_id'], ref['reference_id']
+            rid = resolve_reference(catalog, sid, rid)
             if (not isinstance(sid, str) or not isinstance(rid, str) or sid not in ids
                     or rid not in catalog.get(sid, {}) or (sid, rid) in used):
                 raise ValueError('Peer audit reference must resolve to unique in-scope original text')

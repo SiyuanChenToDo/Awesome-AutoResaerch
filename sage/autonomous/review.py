@@ -31,7 +31,7 @@ AXES = {
     'venue_readiness': (5, 'If executed well, would this proposal make a sharp and timely contribution?'),
 }
 
-PROJECTION_VERSION = 'sage.autonomous.scientific-projection.v1'
+PROJECTION_VERSION = 'sage.autonomous.scientific-projection.v2'
 EVIDENCE_VIEW_VERSION = 'sage.autonomous.evidence-view.v1'
 
 # Claim grouping for the compact evidence projection. The nine primary groups
@@ -180,9 +180,13 @@ _COMMON_SCIENTIFIC_FIELDS = frozenset({
     'statistics', 'statistical_analysis', 'analysis_plan', 'power_analysis',
     'power_derivation', 'sample_size', 'stopping_rule', 'stopping_rules',
     'protocol', 'protocol_contract', 'scientific_protocol', 'evaluation_protocol',
-    'preregistration', 'operating_conditions',
+    'preregistration', 'operating_conditions', 'calibration_plan',
 })
-CONTEXT_SCIENTIFIC_FIELDS = _COMMON_SCIENTIFIC_FIELDS | {'shared_protocol', 'open_objections'}
+CONTEXT_SCIENTIFIC_FIELDS = _COMMON_SCIENTIFIC_FIELDS | {
+    'shared_protocol', 'shared_scientific_context', 'open_objections'}
+_SHARED_SCIENTIFIC_FIELDS = _COMMON_SCIENTIFIC_FIELDS | {
+    'novelty_operationalization', 'computational_envelope', 'evidence_policy',
+    'verification_boundary'}
 CANDIDATE_SCIENTIFIC_FIELDS = _COMMON_SCIENTIFIC_FIELDS | {
     'hypothesis', 'mechanism', 'source_ids', 'closest_prior_art',
     'novelty_queries', 'falsification', 'predictions', 'derivation', 'proof',
@@ -209,6 +213,11 @@ def scientific_context(primary, candidate_ids):
     if not isinstance(primary, dict):
         raise ValueError('Scientific context requires a primary object')
     context = _project_fields(primary, _CONTEXT_SCIENTIFIC_FIELDS)
+    if 'shared_scientific_context' in context:
+        shared = context['shared_scientific_context']
+        if not isinstance(shared, dict):
+            raise ValueError('shared_scientific_context must be an object')
+        context['shared_scientific_context'] = _project_fields(shared, _SHARED_SCIENTIFIC_FIELDS)
     if isinstance(primary.get('open_objections'), list):
         context['open_objections'] = [_project_fields(item, _OBJECTION_FIELDS)
                                      for item in primary['open_objections']
@@ -292,7 +301,9 @@ def scientific_input(primary, topic, *, problem_anchors=None):
                                                {'candidates', 'selected_ids', 'open_objections'}),
               'omitted_candidate_fields': {
                   ident: sorted(set(candidates[ident]) - _CANDIDATE_SCIENTIFIC_FIELDS)
-                  for ident in selected}}
+                  for ident in selected},
+              'omitted_shared_context_fields': sorted(set(primary.get('shared_scientific_context', {})) -
+                                                       _SHARED_SCIENTIFIC_FIELDS)}
     return document, ledger
 
 

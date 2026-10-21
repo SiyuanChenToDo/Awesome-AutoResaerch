@@ -55,6 +55,8 @@ TOOLS = [
      {'paper_ids': {'type': 'array', 'items': {'type': 'string'}},
       'include': {'type': 'array', 'items': {'type': 'string'}}}),
     ('protocol_schema', 'Get the canonical scientific protocol schema: encodings, primary endpoints, uncertainty decisions and resource assumptions.', {}),
+    ('preflight', 'Zero-model check of the exact current JSON, synthesis, advisory lineage and bound report, using the formal grader checks. Does not consume a formal attempt. Inspect omitted scientific fields and resolve errors before every coral eval; repeat after every file change.',
+     {'artifact_path': {'type': 'string'}}),
     ('report', 'Render complete Chinese CONJECTURES.md from the current registered primary JSON. Binds the SHA, version, all scientific fields and separate explanatory narrative. Re-render after each revision.',
      {'artifact_path': {'type': 'string'}, 'narrative': {'type': 'string'}}),
     ('team', 'Authenticated native research team: status returns a compact view (phase, round, role, next action, counts, frozen slot list '
