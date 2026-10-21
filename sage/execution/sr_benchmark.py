@@ -15,6 +15,8 @@ import time
 ARMS = ('no_simplify', 'lsh_only', 'probe_verified', 'exact_probe',
         'size_penalty_small', 'size_penalty_large')
 BENCHMARKS = ('polynomial', 'trigonometric', 'interaction')
+PRIMARY_MINIMUM_EFFECT = .02
+PRIMARY_HOLM_ALPHA = .05
 POLICY_SPACE = {'hash_bits': (64, 256), 'probe_count': (16, 32, 64),
                 'epsilon': (0.0, 1e-8, 1e-4)}
 
@@ -265,8 +267,19 @@ def analyze(result, *, bootstrap_repeats=2000):
         previous=max(previous,min(1,(len(contrasts)-rank)*item['paired_signflip_p']))
         item['holm_p']=previous
     primary=contrasts[0]
-    claim=('supported_in_this_bounded_experiment' if primary['ci95'][0]>0 and
-           primary['mean_delta_test_r2']>=.02 and primary['holm_p']<.05 else 'not_supported')
+    # H1 promises at least the minimum effect, not merely a nonzero effect.
+    # The zero-null sign-flip/Holm tests remain separate diagnostics. A positive
+    # point estimate above the threshold cannot resolve an interval crossing it.
+    if primary['ci95'][0] >= PRIMARY_MINIMUM_EFFECT and primary['holm_p'] < PRIMARY_HOLM_ALPHA:
+        claim='supported_in_this_bounded_experiment'
+        reason='interval_supports_minimum_effect_and_zero_null_family_gate_passed'
+    elif primary['ci95'][1] < PRIMARY_MINIMUM_EFFECT:
+        claim='not_supported'
+        reason='interval_upper_bound_below_minimum_effect'
+    else:
+        claim='inconclusive'
+        reason=('interval_crosses_minimum_effect' if primary['ci95'][0] < PRIMARY_MINIMUM_EFFECT
+                else 'zero_null_family_gate_not_passed')
     matches=[]
     for control in ('size_penalty_small','size_penalty_large'):
         # Report each function separately; pooling can conceal opposite mismatches.
@@ -277,7 +290,17 @@ def analyze(result, *, bootstrap_repeats=2000):
             matches.append({'benchmark':name,'control':control,'empirical_ks_distance':ks,
                             'preregistered_match_criterion_met':ks<=.25})
     return {'schema_version':'sage.sr_analysis.v1','summaries':summaries,'contrasts':contrasts,
-            'primary_claim_status':claim,'complexity_matching':matches,
+            'primary_claim_status':claim,
+            'primary_decision':{'version':'sage.sr_primary_decision.v2',
+                'minimum_effect':PRIMARY_MINIMUM_EFFECT,'status':claim,'reason':reason,
+                'support_rule':'primary_ci95_lower_bound >= minimum_effect and zero_null_holm_p < alpha',
+                'not_supported_rule':'primary_ci95_upper_bound < minimum_effect',
+                'otherwise':'inconclusive','holm_alpha':PRIMARY_HOLM_ALPHA,
+                'interval_scope':'unadjusted_95_percent_paired_seed_cluster_bootstrap_for_prespecified_primary_contrast',
+                'signflip_null':'zero_paired_effect_under_sign_symmetry',
+                'signflip_scope':'two_sided_zero_effect_test_with_Holm_adjustment_across_five_contrasts; not_a_test_of_minimum_effect',
+                'limitation':'small_seed_bootstrap_intervals_are_not_power_or_coverage_certification'},
+            'complexity_matching':matches,
             'all_complexity_matches_met':all(r['preregistered_match_criterion_met'] for r in matches),
             'bootstrap_repeats':bootstrap_repeats,'independent_unit':'paired_training_seed_cluster',
             'scope':'fixed_analytic_functions_and_listed_seeds_only',

@@ -25,6 +25,25 @@ Added 2026-10-17: sage/discussion combines the CoI source-scoped chain-to-idea m
 
 ## ARIS / CORAL integration (2026-10-18)
 
+Novelty-feedback update, 2026-10-18: the owned `sage/autonomous/novelty.py`
+adds a separate score-blind advice audit and source-scoped claim comparisons,
+informed by ARIS claim-level novelty checking, CoI paper-conditioned improvement
+and Agent Laboratory's differentiated reviewer perspectives. It is a SAGE
+adaptation, not copied upstream runtime behavior. The original ARIS seven-axis
+numeric weights remain unchanged. Source-span references authenticate quoted
+text location rather than scientific entailment; proposed novelty moves are
+unverified and same-family model feedback is not independent acceptance.
+
+Scientific-review repair, 2026-10-18: `sage/autonomous/review.py` adapts the seven
+1–10 proposal dimensions and 15/25/25/15/10/5/5 percent weights from ARIS
+`skills/research-refine/SKILL.md` at the pinned commit below. The complete refine
+skill and its `shared-references/taste-calibration.md` are now included in native
+task input. Selected-only review, strict JSON checks, local weighted arithmetic,
+the selected-candidate mean and 0–1 CORAL normalization are SAGE adaptations.
+No curated anchors are configured, so calibration remains `none`; same-family
+review does not satisfy the original independent-acceptance requirement. Original
+upstream files are unchanged. See `docs/upstream-review-rubrics.md`.
+
 ARIS, MIT (c) 2026 wanshuiyin, https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep, pinned 15c0b799e6cd5fbc4da381a5786dd0bc2cdf15ee. Its idea-creator and novelty-check workflows inform the owned claim decomposition, multi-lens generation and claim-level review prompts in sage/review/claims.py and sage/ideation/. Modified to use bounded SAGE providers, supplied IDs, explicit unknown, and provider-response receipts. The optional sage/integrations/aris.py adapter executes the external original review_gate.py after source-hash verification; it does not install upstream skills. License: LICENSES/ARIS-MIT.txt.
 
 CORAL, Apache-2.0, https://github.com/Human-Agent-Society/CORAL, pinned 0123dfb939b35228cf2c1fde224cd0561e727408. The optional owned task adapter in sage/integrations/coral*.py calls the installed original SubprocessGrader and TaskGrader APIs. Its first grader supports only reviewed synthetic expression-simplification smoke scripts. The later native autonomous entrypoint uses the original AgentManager; multi-island research behavior remains unvalidated. The lifecycle integration in sage/autonomous/dsh_runtime.py is adapted from coral/agent/builtin/deepseek_harness.py, modified on 2026-10-18 to consume actual native session markers, invoke the existing headless resume API, preserve an exact manager-private pointer and filter public logs to metadata. Original upstream files remain unmodified. License: LICENSES/CORAL-Apache-2.0.txt. Neither integration establishes upstream endorsement or research superiority.

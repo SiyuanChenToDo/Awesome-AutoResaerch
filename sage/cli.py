@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 from . import __version__
-from .config import RunConfig
+from .config import RunConfig, REVIEW_MAX_OUTPUT_TOKENS
 from .errors import SageError, ConfigurationError
 from .fixtures import FixtureModel, FixtureSource
 from .orchestration import run
@@ -351,7 +351,13 @@ async def execute_write_paper(args):
         raise ConfigurationError('Manuscript evidence differs from verified experiment analysis')
     if bundle.get('lineage') != lineage:
         raise ConfigurationError('Manuscript evidence lineage differs from verified experiment')
-    defaults = dict(max_model_calls=120, max_tokens_per_call=32768,
+    # write-paper shares the large-completion budget with the review chain:
+    # manuscript sections and reviews hit the same ~32k P100 outputs, and the
+    # 25/36 truncation-suspect repair retries justify one named cap. The raised
+    # per-call reservation still fits RunConfig validation (<= 65536) and the
+    # 3,932,160 total reserved-output budget (80 calls) stays below
+    # max_model_calls=120, so no non-review default regresses.
+    defaults = dict(max_model_calls=120, max_tokens_per_call=REVIEW_MAX_OUTPUT_TOKENS,
                     max_reserved_output_tokens=3932160, max_wall_seconds=7200,
                     request_timeout_seconds=300, max_prompt_chars=250000,
                     max_response_chars=250000,refinement_rounds=1)

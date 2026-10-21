@@ -177,6 +177,21 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RuntimeAndDiscoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_events_record_utc_time_and_elapsed_monotonic_progress(self):
+        from datetime import datetime, timezone
+        ticks = iter((100.0, 101.0, 103.5))
+        runtime = Runtime(FixtureModel(), FixtureModel(), FixtureSource(), RunConfig(), clock=lambda: next(ticks))
+        before = datetime.now(timezone.utc)
+        runtime.event('handoff', 'started')
+        runtime.event('handoff', 'succeeded')
+        after = datetime.now(timezone.utc)
+        self.assertEqual([e['elapsed_seconds'] for e in runtime.audit], [1.0, 3.5])
+        for event in runtime.audit:
+            observed = datetime.fromisoformat(event['time'])
+            self.assertIsNotNone(observed.utcoffset())
+            self.assertLessEqual(before, observed)
+            self.assertLessEqual(observed, after)
+
     async def test_call_timeout_bounded(self):
         config = RunConfig(request_timeout_seconds=0.005)
         runtime = Runtime(FixtureModel(), FixtureModel(), FixtureSource(), config)

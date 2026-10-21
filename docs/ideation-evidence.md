@@ -29,8 +29,10 @@ synthetic source families to exercise the full four-role/two-round research path
 
 ## Evidence input: read, extract, then discuss
 
-The downstream input is a bounded `sage.evidence_capsule.v1`, rather than the raw
-paper or only its abstract. Extraction reads supplied article sections or, in
+Since 2026-10-19, the research profile and native `sage autonomous` both use
+source-span-bound `sage.evidence_capsule.v2` cards with claim-level semantic
+screening. The downstream input is a bounded card rather than the raw paper or
+only its abstract. Extraction reads supplied article sections or, in
 `paper_text_mode=arxiv`, official arXiv HTML followed by optional PDF text fallback.
 PDF support requires the optional dependency in `requirements-fulltext.txt`.
 Only literal official arXiv identifiers/endpoints are accepted; no redirects,
@@ -44,24 +46,47 @@ counts, selected locators, partial-reading/truncation flags, missing categories,
 and bounded source-attributed claims. Categories cover problem, motivation, method,
 assumptions, data, metrics, results, baselines, limitations, reproducibility and
 future work. Inferences are stored separately as unverified model interpretation.
-Claims require a source excerpt matched against the actual read chunk. Matching
-checks location, not semantic entailment or truth. Author-reported results are
+Claims require an original passage ID matched against the actual read chunk;
+the host copies its exact source text. Matching checks location. A separate,
+budgeted semantic screen records `supported`, `unsupported` or `uncertain` with
+reasons. Only supported claims populate the usable `claims`, `Evidence.idea` and
+`Evidence.experiment` summaries. Other claims remain explicitly unverified with
+their original passages and reasons. This same-family model assessment is not
+independent verification or a guarantee of truth. Author-reported results are
 never labeled independently reproduced results.
 
 The reader bounds HTTP bodies at 10 MB, extracted text at 400,000 characters and
 PDF extraction at 60 pages. Extraction reads up to eight 7,000-character chunks,
 prioritizing abstract/introduction, method, experiment/result and limitation/discussion
-headings, spreading remaining reads over the document, and retains at most 18 claims in
-12,000 characters. This is selective reading, not guaranteed full-paper coverage.
+headings, spreading remaining reads over the document, and retains at most 18 claims.
+The research profile's card capacity is 240,000 characters to include semantic
+audit metadata; native autonomous reading uses the same screen with up to 12 chunks
+and 40 claims. This is selective reading, not guaranteed full-paper coverage.
 Unavailable full text falls back to explicitly labeled abstract evidence; missing
 methods, results and references remain missing. Formulas/tables in PDF text can
 be incomplete. Raw parsed text stays in retrieval checkpoints, while capsules
 reach chain ideation, discussion and experiment planning.
 After finite retries, a chunk with invalid quotations contributes zero accepted
 claims and remains in `failed_chunk_ids` plus the negative audit. Other validated
-chunks can still form a card, with partial-reading flags. Zero validated claims
-cannot form usable evidence. Metadata does not repeat an abstract outside the
-read chunk, preventing accidental cross-chunk quotation.
+chunks can still form a card, with partial-reading flags. Zero source-bound claims
+cannot form a card; if semantic screening supports none, it retains only the
+explicitly unverified claims and the usable summaries state that evidence was
+not established. Metadata does not repeat an abstract outside the read chunk,
+preventing accidental cross-chunk quotation.
+
+At the `Literature.extract` boundary, all downstream ideation, review, discussion
+and experiment-planning consumers receive the same `capsule_view`: complete
+supported/unverified claims and their individual verdicts, without the duplicate
+`claims_before_entailment` and decision ledgers. The extraction event retains the
+full original audit. The view is copied, so downstream processing cannot alter
+that record. Identical paper content and topic reuse the screened card within
+the same runtime rather than paying to extract and screen it again.
+
+The explicit compatibility configuration `evidence_mode: capsule` alone still
+defaults to `capsule_semantic_audit: false`, the original quote-matched v1 card
+and 12,000-character capacity. It does not claim semantic screening occurred.
+Use the research profile or explicitly enable `capsule_semantic_audit` with an
+adequate capacity to select the newer path; `standard` defaults remain unchanged.
 Discussion additionally projects each card to 2,000-4,500
 characters, omitting inference prose and trailing claims with explicit omission
 counts and a full-card digest. Every source remains visible/citable; complete
@@ -133,11 +158,13 @@ does not implement arbitrary training, datasets or research experiments.
 
 ## Verification and limits
 
-Run `python scripts/check.py`. New regressions exercise exact-excerpt rejection,
+Run `python scripts/check.py`. Regressions exercise exact-excerpt rejection,
 coverage/truncation, bounded relaxation/accounting, semantic-ID validation,
 cross-role evidence access, methodological acceptance, real-edge normalization,
-graph fallback labeling and the four-role/two-round controller using synthetic
-inputs. Live smoke results must be recorded separately under ignored `projects/`.
+graph fallback labeling, the actual semantic `Literature.extract` branch,
+screened-summary isolation, shared transport views, exact-input caching and the
+four-role/two-round controller using synthetic inputs. Live smoke results must be
+recorded separately under ignored `projects/`.
 Scientific quality needs a same-topic/same-budget comparison and human evidence
 review; a software pass or fluent idea is insufficient.
 

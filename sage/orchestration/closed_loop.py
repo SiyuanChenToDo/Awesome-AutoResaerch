@@ -9,10 +9,11 @@ import json
 from pathlib import Path
 import platform
 import statistics
+import threading
 import time
 from ..artifacts import atomic_json, atomic_text
 from ..checkpoints import digest, code_version
-from ..errors import ConfigurationError, SageError
+from ..errors import BudgetExceeded, ConfigurationError, SageError
 from ..execution.research import native_evaluate, validate_protocol
 from ..execution.sr_benchmark import ARMS, POLICY_SPACE, validate_policy, dev_score, analyze
 from ..writing import generate_report
@@ -48,6 +49,12 @@ async def run_closed_loop(topic, runtime, *, contract, destination, coral_python
             'confirmation':None,'analysis':None,'report':None,'errors':[],
             'scientific_validation':'bounded_internal_experiment_pending'}
     started=time.monotonic()
+    # Reuse the existing Runtime wall allowance. The frozen execution cap is
+    # another ceiling on this same clock, starting at the first execution and
+    # never resetting between development, selection and confirmation.
+    run_deadline=started+max(0,runtime.remaining())
+    execution_deadline=None
+    cancelled=False
     atomic_json(destination/'protocol.json',contract)
     atomic_json(destination/'environment.json',{'platform':platform.platform(),'python':platform.python_version(),
         'coral_python':str(coral_python),'candidate_python':str(candidate_python),
@@ -58,6 +65,31 @@ async def run_closed_loop(topic, runtime, *, contract, destination, coral_python
         result['usage']['elapsed_seconds']=time.monotonic()-started
         atomic_json(destination/'result.partial.json',result)
         runtime.event('closed_loop',stage)
+
+    async def evaluate(policy,phase,path):
+        nonlocal execution_deadline
+        now=time.monotonic()
+        if execution_deadline is None:
+            execution_deadline=now+contract['max_total_execution_seconds']
+        deadline=min(run_deadline,execution_deadline,now+runtime.remaining())
+        if deadline <= now:
+            raise BudgetExceeded('Shared run or frozen total-execution deadline reached; no experiment started')
+        cancel_event=threading.Event()
+        task=asyncio.create_task(asyncio.to_thread(native_evaluate,contract,policy,phase,
+            destination=path,coral_python=coral_python,candidate_python=candidate_python,
+            allow_execution=True,approved_protocol_digest=digest(contract),
+            deadline=deadline,cancel_event=cancel_event))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Await native cleanup: cancelling the coroutine does not terminate
+            # a thread, its CORAL child or the child evaluator.
+            cancel_event.set()
+            try:
+                await asyncio.shield(task)
+            except (SageError,OSError,ValueError):
+                pass
+            raise
 
     try:
         proposal=await run(topic,runtime.main_model,runtime.source,cheap_model=runtime.cheap_model,
@@ -107,9 +139,7 @@ async def run_closed_loop(topic, runtime, *, contract, destination, coral_python
                      'policy':policy,'policy_digest':digest(policy),'status':'started'}
             result['development_attempts'].append(attempt)
             atomic_json(destination/f'policy-{index+1}.json',policy)
-            data,receipt=await asyncio.to_thread(native_evaluate,contract,policy,'development',
-                destination=destination/f'development-{index+1}',coral_python=coral_python,
-                candidate_python=candidate_python,allow_execution=True,approved_protocol_digest=digest(contract))
+            data,receipt=await evaluate(policy,'development',destination/f'development-{index+1}')
             measurements.append(data)
             feedback=compact_measurements(data)
             attempt.update(status='measured',selection_score=dev_score(data),feedback=feedback,receipt=receipt)
@@ -123,9 +153,7 @@ async def run_closed_loop(topic, runtime, *, contract, destination, coral_python
                    'proposal_digest':digest(result['proposal']),'test_accesses_before_selection':0}
         result['selection']=selection;atomic_json(destination/'selection.json',selection)
         publish('confirmation')
-        data,receipt=await asyncio.to_thread(native_evaluate,contract,selected['policy'],'confirmation',
-            destination=destination/'confirmation',coral_python=coral_python,candidate_python=candidate_python,
-            allow_execution=True,approved_protocol_digest=digest(contract))
+        data,receipt=await evaluate(selected['policy'],'confirmation',destination/'confirmation')
         result['confirmation']=receipt
         analysis=analyze(data,bootstrap_repeats=contract['bootstrap_repeats'])
         result['analysis']=analysis;atomic_json(destination/'analysis.json',analysis)
@@ -180,8 +208,17 @@ async def run_closed_loop(topic, runtime, *, contract, destination, coral_python
             'different search trajectories or unmatched complexity may explain any score gap. '
             'Next independent study: exact upstream implementation, broader external datasets, independently held test sets, '
             'more seeds and a planned power calculation. This run does not admit a general method recommendation into memory.\n')
+    except asyncio.CancelledError:
+        cancelled=True
+        result['status']='cancelled'
+        result['errors'].append({'stage':result['stage'],'code':'cancelled'})
     except (SageError,ValueError,OSError) as error:
-        result['status']='failed';result['errors'].append({'stage':result['stage'],'code':getattr(error,'code',type(error).__name__)})
+        result['status']='stopped' if isinstance(error,BudgetExceeded) else 'failed'
+        result['errors'].append({'stage':result['stage'],'code':getattr(error,'code',type(error).__name__)})
+    if result['errors']:
+        for attempt in result['development_attempts']:
+            if attempt['status']=='started':
+                attempt.update(status='cancelled' if cancelled else 'failed',error=result['errors'][-1]['code'])
     publish('finished')
     result['audit']=list(runtime.audit)
     atomic_json(destination/'result.json',result)
@@ -189,4 +226,6 @@ async def run_closed_loop(topic, runtime, *, contract, destination, coral_python
               'sha256':__import__('hashlib').sha256(p.read_bytes()).hexdigest()}
               for p in sorted(destination.rglob('*')) if p.is_file() and p.name!='manifest.json'}
     atomic_json(destination/'manifest.json',manifest)
+    if cancelled:
+        raise asyncio.CancelledError
     return result

@@ -4,10 +4,12 @@ Lifecycle integration is adapted from CORAL's DeepSeekHarnessRuntime at
 0123dfb939b35228cf2c1fde224cd0561e727408 (Apache-2.0; see NOTICE.md).
 Modified for SAGE: native --json/--session-id, private exact-session recovery,
 strict startup acknowledgement and metadata-only public logs. Upstream stays
-unmodified. Native DSH remains responsible for restoring messages and tools.
+unmodified. A lightweight supervisor parks completed team workers without model
+polling; native DSH remains responsible for restoring messages and tools.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
@@ -17,7 +19,9 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import sys
 import threading
+import time
 import uuid
 from urllib.request import Request, urlopen
 
@@ -26,7 +30,37 @@ from ..artifacts import atomic_json, atomic_text
 logger = logging.getLogger(__name__)
 _SESSION = re.compile(r'session-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\Z')
 _OPTIONS = {'command', 'profile', 'patch', 'provider', 'permission_mode',
-            'tools_mode', 'session_state_dir', 'research_slot', 'research_team_size'}
+            'tools_mode', 'session_state_dir', 'research_slot', 'research_team_size',
+            'lifecycle_timeout_seconds', 'lifecycle_poll_seconds'}
+
+RESTART_LEDGER_SCHEMA = 'sage.native_restart_ledger.v1'
+RESTART_ESCAPE_RECEIPT_SCHEMA = 'sage.native_restart_escape.v1'
+RESTART_LEDGER_HISTORY_LIMIT = 50
+# Consecutive unproductive restarts (no_result / session_error /
+# session_context_overflow) before the ledger archives the recorded session
+# and start() opens a fresh native session instead of resuming the broken one.
+RESTART_ESCAPE_FAILURES = 3
+# Fresh sessions a single agent may open before the terminal policy fires.
+FRESH_SESSION_LIMIT = 2
+# Exact provider phrases from the native DSH stderr on context exhaustion.
+_CONTEXT_OVERFLOW_MARKERS = ('maximum context length is 1048576', 'context_window_exceeded')
+_ERR_READ_LIMIT = 262144
+
+
+def supervised_argv(argv, slot, options, *, environ=None, now=None):
+    """Only worker processes park; the coordinator keeps CORAL's normal flow."""
+    if slot in (None, 0):
+        return argv
+    import math
+    environ = os.environ if environ is None else environ
+    seconds = float(options.get('lifecycle_timeout_seconds', 7200))
+    poll = float(options.get('lifecycle_poll_seconds', 20))
+    deadline = float(environ.get('SAGE_RUNTIME_DEADLINE_UNIX',
+                                (time.time() if now is None else now) + seconds))
+    if not all(math.isfinite(x) for x in (seconds, poll, deadline)) or seconds <= 0 or not 0 < poll <= 60:
+        raise ValueError('Lifecycle timing must be finite, positive and bounded')
+    return [sys.executable, '-m', 'sage.autonomous.lifecycle', '--slot', str(slot),
+            '--deadline', str(deadline), '--poll-seconds', str(poll), '--', *argv]
 
 
 def team_token(token, slot):
@@ -72,6 +106,15 @@ def public_event(event):
     if not isinstance(event, dict) or event.get('type') == 'thinking':
         return None
     kind = event.get('type')
+    if kind == 'sage_lifecycle':
+        if (event.get('state') not in {'parked', 'waiting', 'resuming', 'stopped',
+                                      'deadline', 'status_unavailable', 'native_error'}
+                or type(event.get('slot')) is not int or not 1 <= event['slot'] <= 3):
+            return None
+        result = {'type': kind, 'state': event['state'], 'slot': event['slot']}
+        if 'sessionId' in event:
+            result['sessionId'] = checked_id(event['sessionId'])
+        return result
     if not isinstance(kind, str) or kind not in {
             'session', 'status', 'text', 'tool_call', 'tool_result', 'final', 'error'}:
         return None
@@ -138,14 +181,147 @@ def saved_session(worktree_path, agent_id, *, state_root):
         raise ValueError('Cannot restore the recorded native session; refusing a fresh fallback') from exc
 
 
-def save_session(worktree_path, agent_id, session_id, *, state_root):
+def save_session(worktree_path, agent_id, session_id, *, state_root, native_process=None):
     checked_id(session_id)
     state_root = private_state_root(worktree_path, state_root)
     state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     state_root.chmod(0o700)
     atomic_json(state_path(worktree_path, state_root), {
         'schema_version': 'sage.native_session.v1', 'agent_id': agent_id,
-        'cwd': str(Path(worktree_path).resolve()), 'session_id': checked_id(session_id)})
+        'cwd': str(Path(worktree_path).resolve()), 'session_id': checked_id(session_id),
+        **({'native_process': native_process} if native_process is not None else {})})
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def restart_ledger_path(state_root, agent_id):
+    return Path(state_root) / (agent_id + '.restart-ledger.json')
+
+
+def fresh_restart_ledger(worktree_path, agent_id):
+    return {'schema_version': RESTART_LEDGER_SCHEMA, 'agent_id': agent_id,
+            'cwd': str(Path(worktree_path).resolve()), 'current_session_id': None,
+            'consecutive_failures': 0, 'fresh_session_count': 0,
+            'history': [], 'updated_at': None}
+
+
+def load_restart_ledger(worktree_path, agent_id, *, state_root):
+    """Manager-private per-agent restart ledger; corrupt or foreign JSON starts over."""
+    root = private_state_root(worktree_path, state_root)
+    default = fresh_restart_ledger(worktree_path, agent_id)
+    try:
+        raw = json.loads(restart_ledger_path(root, agent_id).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return default
+    if (not isinstance(raw, dict) or raw.get('schema_version') != RESTART_LEDGER_SCHEMA
+            or raw.get('agent_id') != agent_id or raw.get('cwd') != default['cwd']):
+        return default
+    ledger = dict(default)
+    for key in default:
+        if key in raw:
+            ledger[key] = raw[key]
+    if not isinstance(ledger['history'], list):
+        ledger['history'] = []
+    ledger['history'] = [entry for entry in ledger['history']
+                         if isinstance(entry, dict)][-RESTART_LEDGER_HISTORY_LIMIT:]
+    for key in ('consecutive_failures', 'fresh_session_count'):
+        if type(ledger[key]) is not int or ledger[key] < 0:
+            ledger[key] = 0
+    if ledger['current_session_id'] is not None:
+        try:
+            checked_id(ledger['current_session_id'])
+        except ValueError:
+            ledger['current_session_id'] = None
+    return ledger
+
+
+def save_restart_ledger(worktree_path, agent_id, *, state_root, ledger):
+    root = private_state_root(worktree_path, state_root)
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name == 'posix':
+        root.chmod(0o700)
+    ledger['history'] = ledger['history'][-RESTART_LEDGER_HISTORY_LIMIT:]
+    ledger['updated_at'] = _utc_now()
+    atomic_json(restart_ledger_path(root, agent_id), ledger)
+
+
+def plan_restart(worktree_path, agent_id, state_root, *, resume_session_id=None,
+                 prompt_source=None, slot=None):
+    """Resolve the resume decision with the restart-ledger escape and terminal policy.
+
+    CORAL restarts a dead agent with the session id extracted from its old log,
+    which after a context-overflow crash resumes the exact broken session on
+    every restart. The ledger counts consecutive unproductive exits; once the
+    escape threshold is reached this archives the session, deletes the private
+    pointer, and starts a fresh native session instead of resuming.
+
+    Raises RuntimeError under the terminal policy (fresh sessions exhausted and
+    the current session still fails): letting that escape propagate terminates
+    the CORAL manager and ends the whole run, which is the approved terminal
+    strategy — an agent whose every session dies the same way must not burn
+    budget on ~861-token eval feedback injections per restart.
+    """
+    state_root = private_state_root(worktree_path, state_root)
+    previous = saved_session(worktree_path, agent_id, state_root=state_root)
+    ledger = load_restart_ledger(worktree_path, agent_id, state_root=state_root)
+    ledger_path = restart_ledger_path(state_root, agent_id)
+    fresh_reset, archived = False, None
+    if ledger['consecutive_failures'] >= RESTART_ESCAPE_FAILURES:
+        if ledger['fresh_session_count'] >= FRESH_SESSION_LIMIT:
+            recent = '; '.join(
+                f"{entry.get('recorded_at', '?')}:{entry.get('classification') or entry.get('event')}"
+                for entry in ledger['history'][-RESTART_ESCAPE_FAILURES * 2:])
+            raise RuntimeError(
+                f'Native researcher {agent_id}' +
+                (f' (research slot {slot})' if slot is not None else '') +
+                f' exhausted session recovery: {ledger["fresh_session_count"]} fresh sessions were '
+                f'already opened, and the current session still failed {ledger["consecutive_failures"]} '
+                f'consecutive restarts. Restart ledger: {ledger_path}. Recent history: {recent}. '
+                'Workspace files are intact; human inspection is required.')
+        archived = ledger['current_session_id'] or previous
+        prior_failures = ledger['consecutive_failures']
+        ledger['fresh_session_count'] += 1
+        ledger['consecutive_failures'] = 0
+        ledger['current_session_id'] = None
+        ledger['history'].append({'event': 'session_archived', 'recorded_at': _utc_now(),
+            'archived_session_id': archived, 'prior_consecutive_failures': prior_failures,
+            'reason': (f'{prior_failures} consecutive unproductive restarts; the recorded session '
+                       'cannot make progress (context window exhausted). Workspace files are intact.')})
+        save_restart_ledger(worktree_path, agent_id, state_root=state_root, ledger=ledger)
+        # Escape receipt beside the ledger: manager-private evidence, never in the worktree.
+        atomic_json(state_root / (agent_id + '.restart-escape.json'), {
+            'schema_version': RESTART_ESCAPE_RECEIPT_SCHEMA, 'agent_id': agent_id,
+            'worktree': str(Path(worktree_path).resolve()), 'archived_session_id': archived,
+            'prior_consecutive_failures': prior_failures,
+            'fresh_session_count': ledger['fresh_session_count'],
+            'prompt_source': prompt_source, 'ledger_path': str(ledger_path),
+            'recorded_at': _utc_now()})
+        try:
+            state_path(worktree_path, state_root).unlink()
+        except FileNotFoundError:
+            pass
+        # The condemned session must not resurface through the stale local copy.
+        previous = None
+        fresh_reset = True
+    resolved = resume_session_id
+    if resolved is not None:
+        checked_id(resolved)
+        if fresh_reset:
+            # The ledger condemned this exact session; a requested resume id
+            # extracted from the dead agent's log must not resurrect it.
+            resolved = None
+        elif previous is not None and previous != resolved:
+            raise ValueError('Requested session differs from the exact recorded native session')
+    elif previous is not None:
+        resolved = previous
+    elif not fresh_reset and prompt_source in {'resume', 'restart', 'reflect', 'pivot'}:
+        raise ValueError('Continuation has no native session identity; refusing to start fresh')
+    return {'state_root': state_root, 'previous_session_id': previous, 'resume_session_id': resolved,
+            'fresh_reset': fresh_reset, 'archived_session_id': archived,
+            'fresh_session_count': ledger['fresh_session_count'], 'ledger': ledger,
+            'ledger_path': ledger_path}
 
 
 class ResumableDeepSeekRuntime:
@@ -162,10 +338,62 @@ class ResumableDeepSeekRuntime:
             events = [json.loads(line) for line in Path(log_path).read_text(encoding='utf-8').splitlines()
                       if line.startswith('{')]
         except (OSError, ValueError):
-            return 'no_result'
-        if any(isinstance(e, dict) and e.get('type') == 'sage_runtime_error' for e in events):
-            return 'session_error'
-        return 'clean' if exit_code == 0 and any(isinstance(e, dict) and e.get('type') == 'final' for e in events) else 'no_result'
+            classification = 'no_result'
+        else:
+            if any(isinstance(e, dict) and e.get('type') == 'sage_runtime_error' for e in events):
+                classification = 'session_error'
+            else:
+                classification = 'clean' if exit_code == 0 and any(
+                    isinstance(e, dict) and e.get('type') == 'final' for e in events) else 'no_result'
+        return self._record_restart_ledger(Path(log_path), exit_code, classification)
+
+    def _record_restart_ledger(self, log_path, exit_code, classification):
+        """Book the exit into the per-agent ledger; overflow gets its own class.
+
+        A context-window exhaustion is a no_result with a precise cause: the DSH
+        provider writes it to the agent's stderr, so a no_result/session_error
+        with the marker in this launch's stderr tail is reported as
+        session_context_overflow (CORAL treats any non-clean class as a crash,
+        so the new value stays wire-compatible with the manager). Bookkeeping
+        must never raise: CORAL falls back to an uptime heuristic otherwise.
+        """
+        scope = getattr(self, '_restart_scope', None)
+        if not isinstance(scope, dict) or Path(log_path).parent != scope.get('log_dir'):
+            return classification
+        try:
+            if classification != 'clean':
+                # agent.err accumulates across restarts (append mode); only the
+                # bytes written during this launch may classify an overflow.
+                try:
+                    with open(scope['err_path'], 'rb') as stream:
+                        stream.seek(scope.get('err_offset') or 0)
+                        tail = stream.read(_ERR_READ_LIMIT).decode('utf-8', errors='replace').casefold()
+                except OSError:
+                    tail = ''
+                if any(marker in tail for marker in _CONTEXT_OVERFLOW_MARKERS):
+                    classification = 'session_context_overflow'
+            try:
+                session_id = session_from_log(log_path)
+            except ValueError:
+                session_id = None
+            ledger = load_restart_ledger(scope['worktree'], scope['agent_id'],
+                                         state_root=scope['state_root'])
+            ledger['history'].append({'event': 'exit', 'recorded_at': _utc_now(),
+                'classification': classification, 'exit_code': exit_code,
+                'session_id': session_id})
+            if session_id is not None:
+                ledger['current_session_id'] = session_id
+            # A clean exit proves the session is alive again: reset the failure
+            # run. fresh_session_count stays — it records how many sessions the
+            # agent has already burned.
+            ledger['consecutive_failures'] = (0 if classification == 'clean'
+                                              else ledger['consecutive_failures'] + 1)
+            save_restart_ledger(scope['worktree'], scope['agent_id'],
+                                state_root=scope['state_root'], ledger=ledger)
+        except Exception:
+            logger.warning('Restart ledger bookkeeping failed for %s',
+                           scope.get('agent_id'), exc_info=True)
+        return classification
 
     def start(self, worktree_path, coral_md_path, model='deepseek-flash', runtime_options=None,
               max_turns=0, log_dir=None, verbose=False, resume_session_id=None, prompt=None,
@@ -183,22 +411,31 @@ class ResumableDeepSeekRuntime:
         opts = dict(runtime_options or {})
         if set(opts) - _OPTIONS or not opts.get('session_state_dir'):
             raise ValueError('Resumable DSH needs an explicit private session_state_dir and supported options')
-        state_root = private_state_root(worktree_path, opts['session_state_dir'])
-        previous = saved_session(worktree_path, agent_id, state_root=state_root)
-        if resume_session_id is not None:
-            checked_id(resume_session_id)
-            if previous is not None and previous != resume_session_id:
-                raise ValueError('Requested session differs from the exact recorded native session')
-        elif previous is not None:
+        plan = plan_restart(worktree_path, agent_id, opts['session_state_dir'],
+                            resume_session_id=resume_session_id, prompt_source=prompt_source,
+                            slot=opts.get('research_slot'))
+        state_root = plan['state_root']
+        resume_session_id = plan['resume_session_id']
+        if plan['fresh_reset']:
+            logger.warning('Restart ledger for %s archived session %s after %s consecutive '
+                           'unproductive restarts; opening fresh session #%s', agent_id,
+                           plan['archived_session_id'], RESTART_ESCAPE_FAILURES,
+                           plan['fresh_session_count'])
+        elif plan['previous_session_id'] is not None:
             # CORAL's generic whole-manager validator recognizes Claude files
             # only. Recover our exact private pointer, never a guessed latest log.
-            resume_session_id = previous
-            logger.info('Restoring recorded native DSH session %s for %s', previous, agent_id)
-        elif prompt_source in {'resume', 'restart', 'reflect', 'pivot'}:
-            raise ValueError('Continuation has no native session identity; refusing to start fresh')
+            logger.info('Restoring recorded native DSH session %s for %s',
+                        plan['previous_session_id'], agent_id)
         if prompt is None:
             prompt = ('Continue the existing research session and address the current feedback.'
                       if resume_session_id else 'Begin working on your task and iterating on the seed solution.')
+        if plan['fresh_reset']:
+            archived = plan['archived_session_id']
+            where = (f'Previous native session {archived} was archived'
+                     if archived else 'The previous native session was archived')
+            prompt += (f'\n\n[runtime status] {where} after {RESTART_ESCAPE_FAILURES} consecutive '
+                       'unproductive restarts (context window exhausted); workspace files are '
+                       f'intact. This is fresh session #{plan["fresh_session_count"]} for this agent.')
         slot = opts.get('research_slot')
         if slot is not None:
             size = opts.get('research_team_size')
@@ -230,6 +467,7 @@ class ResumableDeepSeekRuntime:
         argv = native_argv(opts.get('command', 'dsh'), profile=opts.get('profile', 'headless'),
                            patches=[*patches, model_patch], prompt=prompt,
                            resume_session_id=resume_session_id)
+        argv = supervised_argv(argv, slot, opts)
         env = _clean_env()
         env.update(DSH_HOME=str(dsh_home), UV_PROJECT_ENVIRONMENT=str(worktree_path / '.venv'),
                    VIRTUAL_ENV=str(worktree_path / '.venv'))
@@ -247,6 +485,8 @@ class ResumableDeepSeekRuntime:
         user_kwargs = apply_run_as_user(env, run_as_user)
         if user_kwargs:
             user_kwargs['extra_groups'] = []
+        from .lifecycle import acquire_owner_guard
+        owner_guard = acquire_owner_guard(state_root.parent, user_kwargs.get('user', os.getuid()))
         log_dir = Path(log_dir) if log_dir else dsh_home / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / f'{agent_id}.{len(list(log_dir.glob(f"{agent_id}*.log")))}.log'
@@ -258,8 +498,24 @@ class ResumableDeepSeekRuntime:
         err_path, err_file = opened if opened is not None else (log_path.with_suffix('.err'), None)
         if err_file is None:
             err_file = err_path.open('w', encoding='utf-8')
-        process = subprocess.Popen(apply_sandbox(argv, sandbox), cwd=worktree_path, env=env,
-            stdout=subprocess.PIPE, stderr=err_file, start_new_session=True, **user_kwargs)
+        try:
+            err_offset = err_path.stat().st_size
+        except OSError:
+            err_offset = 0
+        # classify_exit receives no state_root; stash exactly what the restart
+        # ledger needs for this launch. One CORAL runtime instance serves one
+        # agent_id, so the scope is unambiguous.
+        self._restart_scope = {'agent_id': agent_id, 'worktree': worktree_path,
+                               'state_root': state_root, 'ledger_path': plan['ledger_path'],
+                               'log_dir': log_dir, 'err_path': err_path, 'err_offset': err_offset}
+        try:
+            process, native_process = owner_guard.launch(apply_sandbox(argv, sandbox),
+                cwd=worktree_path, env=env, stdout=subprocess.PIPE, stderr=err_file,
+                start_new_session=True, **user_kwargs)
+        except BaseException:
+            log_file.close()
+            err_file.close()
+            raise
         handle = AgentHandle(agent_id=agent_id, process=process, worktree_path=worktree_path,
                              log_path=log_path, err_file=err_file, err_path=err_path)
         ready = threading.Event()
@@ -284,7 +540,8 @@ class ResumableDeepSeekRuntime:
                                 (resume_session_id and native_id != resume_session_id) or
                                 (state['session_id'] and state['session_id'] != native_id)):
                             raise ValueError('Native DSH resumed an unexpected session or worktree')
-                        save_session(worktree_path, agent_id, native_id, state_root=state_root)
+                        save_session(worktree_path, agent_id, native_id, state_root=state_root,
+                                     native_process=native_process)
                         if slot is not None and state['session_id'] is None:
                             register_researcher(slot, agent_id, worktree_path, native_id)
                         state['session_id'] = handle.session_id = native_id

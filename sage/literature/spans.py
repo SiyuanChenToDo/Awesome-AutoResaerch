@@ -94,7 +94,7 @@ Return EXACTLY one tag containing JSON, with no other output:
 INPUT_PASSAGES: {json.dumps([{'span_id':s['span_id'],'text':s['text']} for s in spans], ensure_ascii=False)}'''
 
 
-async def extract_span_capsule(runtime, paper, topic, *, archive_sink=None):
+async def extract_span_capsule(runtime, paper, topic, *, archive_sink=None, semantic_audit=False):
     if not paper.article and runtime.config.paper_text_mode == 'arxiv':
         article = await read_article(runtime, paper)
         if article:
@@ -149,6 +149,7 @@ async def extract_span_capsule(runtime, paper, topic, *, archive_sink=None):
                 balanced.append(queues[key].pop(0))
     card = {'schema_version': 'sage.evidence_capsule.v2', 'binding': 'original_source_span_ids',
         'paper_id': paper.paper_id, 'source_scope': paper.evidence_scope,
+        'extraction_topic': topic,
         'source_url': archive['source_url'], 'source_sha256': archive['source_sha256'],
         'claims': balanced, 'source_spans': {}, 'inferences_unverified': list(dict.fromkeys(inferences))[:3],
         'coverage': {'available_chunks': len(available), 'read_chunks': len(selected),
@@ -170,6 +171,20 @@ async def extract_span_capsule(runtime, paper, topic, *, archive_sink=None):
     if not balanced:
         raise NoEvidence('Capsule exceeds configured transport capacity')
     card['coverage']['partial_document'] = card['coverage']['partial_document'] or bool(rejected_claims)
+    if semantic_audit:
+        from .entailment import audit_capsule, capsule_view
+        card = await audit_capsule(runtime, card, topic)
+        # All downstream summaries must use only semantically screened claims.
+        # Exact source location is retained for uncertain/unsupported statements
+        # but cannot promote them back into the method/experiment summary.
+        balanced = card['claims']
+        card['missing_categories'] = [k for k in CATEGORIES if not any(c['category'] == k for c in balanced)]
+        card['coverage']['semantic_uncertainty'] = bool(card['unverified_claims'])
+        size = len(json.dumps(capsule_view(card), ensure_ascii=False))
+        card['coverage']['semantic_view_characters'] = size
+        if size > runtime.config.capsule_max_chars:
+            runtime.event('literature.entailment', 'capsule_transport_limit_exceeded', capsule=card)
+            raise NoEvidence('Semantic capsule exceeds transport limit; full audit retained in runtime events')
     runtime.event('literature.evidence', 'span_capsule_extracted', paper=paper_record(paper), capsule=card)
     def text(categories):
         return '\n'.join(c['claim'] for c in balanced if c['category'] in categories) or 'Not established in read passages.'

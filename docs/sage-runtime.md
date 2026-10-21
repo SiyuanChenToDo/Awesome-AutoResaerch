@@ -329,3 +329,32 @@ bounded empty-query relaxation and optional real citation graph, see the
 proposal-only `run` entry. This explicitly opts into official paper-text retrieval;
 the existing standard profile remains compatible. No scientific quality gain is
 implied by the profile or by software regression results.
+
+## 工具结果归档与 team status 传输瘦身（autonomous 原生入口）
+
+原生 `sage autonomous` 的工具结果在写进 MCP/DSH 会话前经过大小检查，防止单个大结果反复撑满代理上下文：
+
+- **归档阈值**：任何工具结果 wire JSON 序列化后超过 `TOOL_OUTPUT_ARCHIVE_BYTES`（131072 字节，128KB）时，完整字节被归档到运行目录下 `native-run/.coral/public/tool-archive/tool-output-<sha256>.json`（目录 0755、文件 0644，代理 OS 用户可读；与 `service-private/tool-output-<sha256>.json` 管理器私有副本逐字节一致，事件仍记录私有副本）。传输响应替换为小的指针 JSON：`{"archived": true, "tool": ..., "full_bytes": N, "output_sha256": ..., "output_file": ".coral/public/tool-archive/tool-output-<sha256>.json", "summary": ...}`。`summary` 是确定性结构摘要（每个顶层键的类型与嵌套规模，list 给长度、dict 给键数、str 给长度），不调用模型。代理在原生 shell 里按 `output_file` 的相对路径读回完整内容并核对 SHA-256。阈值以下行为完全不变；`events.jsonl` 的 `tool_transfer_completed` 增加 `archived_file`/`archive_error` 字段，其余记录不变。MCP 客户端的 8MB 整体拒答保留为最后兜底。
+- **team status 紧凑版**：`team(action="status")` 默认返回紧凑视图（phase/round/next_action、本人 slot/role、proposal/review/revision/synthesis 计数、frozen 槽位列表及各冻结稿 SHA-256、incoming_issue 计数、peer_advice_audit 计数）加制品指针。全代理共享快照（不含任何槽位专属字段）写在 `native-run/.coral/public/team-snapshot.json`（0644，内容变化时更新），响应带 `snapshot_file`/`snapshot_sha256`。需要完整区块时一次性内联取回：`sections=["frozen_proposals","incoming_issues","syntheses","peer_advice_audits",...]` 或 `detail="full"`；共享文件刻意不含 own_proposal/incoming_issues/peer_advice_audits 等槽位专属数据，揭示屏障与原先的线上行为一致。`propose`/`review`/`revise`/`synthesize` 的响应不变。
+- **evidence 过滤**：`evidence` 接受可选 `paper_ids`（精确论文 ID 列表，只过滤 papers/cards 段；未知 ID 在 `unknown_paper_ids` 中单列）与 `include`（`papers`/`cards`/`reviews`/`searches` 子集，默认全部）。参数类型错误返回与现有工具一致的错误 JSON（ValueError 格式），不产生 500。
+
+以上均为确定性离线行为；归档只改变传输方式，完整字节仍保留在管理器私有副本与共享归档两处，`service-private` 的 0700 权限语义不变。
+
+## 上下文预算与重启健壮性（autonomous 原生入口）
+
+### 原生 maxTokens 与评审链输出上限
+
+DSH provider 插件 `@deepseek-ai/dsh-llm-deepseek` 的默认 `maxTokens=256000` 是每请求输出硬上限，同时预占上下文窗口（输入预算 = 1048576 − maxTokens，默认只剩 792576）。实测（2026-10-19 无人干预运行，四会话 assistant 消息字节数按官方分词器折算）代理单请求输出 P100≈25k token，256000 白白让出约 19 万输入 token，还放大 provider 侧窗口超限概率。`research.patch.yml` 现在以 cordis 同 id 深合并写入 `- id: llm-deepseek / config: maxTokens: 65536`（P100×2 对齐 2 的幂），输入预算恢复到 983040。它与每次启动写到 `runtime-config` 的 `agent-default-model` provider/model 覆盖是两个不同入口，互不冲突；写出的 patch 有离线测试断言。
+
+评审链（scientific_review、novelty_feedback、peer_advice_audit 及其有界 JSON 格式修复）的单次输出上限统一为有名常量 `sage.config.REVIEW_MAX_OUTPUT_TOKENS = 49152`，`write-paper` 的默认 `max_tokens_per_call` 与 runner 启动容量预检引用同一常量，不再各自硬编码。依据：同一运行实测 novelty_feedback completion P100=32.1k token，距原 32 Ki 上限仅 2%；36 次评审 dispatch 中 25 次进入修复重试，与截断相关。容量预检恒等式 `text_tokens + max_tokens + 4096 ≤ 1048576` 不变（49152+4096 远小于窗口），`RunConfig` 对 `max_tokens_per_call ≤ 65536` 的校验也仍成立。
+
+### 重启逃生与终局策略
+
+背景：一次 autonomous 运行中槽 0 代理的 DSH 会话上下文超限（messages 约 116 万 token > 1048576）。重启决策在 CORAL 上游（每次用 `--session-id` 精确恢复同一坏会话、无最大次数；30 秒熔断窗口在 20–25 秒的重启节奏下数学上永不触发），SAGE 不改上游，在自己侧做逃生：
+
+- **重启台账**：manager 私有 `session-state`（0700）下每代理一个 `<agent-id>.restart-ledger.json`，含 `current_session_id`、`consecutive_failures`（连续 no_result/session_error/session_context_overflow 计数）、`fresh_session_count`、`history`（最近 50 条分类与时间摘要）。tmp+rename 防半写；JSON 损坏或属主/cwd 不符时视为无台账重新开始。
+- **分类增强**：`classify_exit` 在 stdout 判定之外，读取本次启动以来写入的 agent.err 尾部（err 文件跨重启累积，只读启动时记录的字节偏移之后的内容），命中 `maximum context length is 1048576` 或 `CONTEXT_WINDOW_EXCEEDED` 归类为 `session_context_overflow`。CORAL 把任何非 clean 分类都计为 crash，新枚举值与上游兼容。
+- **逃生**：某代理连续失败 ≥3 次 → 台账把旧 session_id 归档进 history → 删除 saved_session 指针文件 → 丢弃 CORAL 从旧日志提取的 resume id → 本次以新会话启动（native argv 不带 `--session-id`），并在续跑 prompt 末尾附一行 `[runtime status]` 说明（上下文超限、工作区文件完好、第几个新会话）。同时写 manager 私有的 `<agent-id>.restart-escape.json` receipt 留痕。被分类为 clean 的重启把 `consecutive_failures` 清零（`fresh_session_count` 保留，表示已换过几次会话）。
+- **终局**：`fresh_session_count ≥ 2` 且新会话仍连续失败 ≥3 次 → `start()` 抛 `RuntimeError`（消息含槽位、台账路径、最近失败史摘要）。该异常上抛会终止 CORAL manager、结束整个运行——这是用户已批准的终局策略：每个会话都以同样方式死亡的代理不应再继续消耗预算（CORAL 每次重启还重注约 861 token 的 Eval 反馈）。工作区文件保持原样供人工检查。
+- **熔断护栏（降频，非主修复）**：`task.yaml` 的 agents 显式设置 `restart_burst_threshold: 3`、`restart_burst_window: 120`、`restart_pause_seconds: 300`（满足上游 `pause_seconds ≥ window` 约束）。原默认 30 秒窗口在 20–25 秒节奏下永不触发，放宽后 CORAL 熔断才有机会暂停代理。
+- **检查边界**：台账与 receipt 都在 manager 私有的 session-state 目录（0700，agent OS 用户不可见、不可写）；整套机制只影响重启决策，不改写任何科研产物、评分或会话内容；终止运行不等于科学失败判定，最终 `result.json` 按未完成处理。

@@ -5,11 +5,55 @@ class SageError(Exception):
 class ConfigurationError(SageError):
     code = "configuration_error"
 
+class RequestCapacityError(ConfigurationError):
+    """Authored local preflight diagnostics; never an external error body."""
+    code = "request_capacity_error"
+    _messages = {
+        'invalid_prompt': 'Prompt must be nonempty UTF-8 text.',
+        'invalid_output_budget': 'Requested output exceeds the supported output-token limit.',
+        'payload_limit_exceeded': 'Request exceeds the separate local UTF-8 payload bound.',
+        'unknown_model_capacity': 'Request exceeds the conservative character bound for an unverified model profile.',
+        'tokenizer_asset_missing': 'Official tokenizer asset is missing; run the native environment setup.',
+        'tokenizer_asset_invalid': 'Official tokenizer asset failed its pinned integrity check; repair the environment setup.',
+        'tokenizer_unavailable': 'Official tokenizer runtime is unavailable; repair the environment setup.',
+        'context_capacity_exceeded': 'Input tokens, requested output and chat allowance exceed the documented context.',
+    }
+
+    def __init__(self, reason, capacity=None):
+        self.reason = reason if reason in self._messages else 'invalid_prompt'
+        self.capacity = {}
+        for key in ('input_characters', 'input_utf8_bytes', 'text_tokens', 'requested_output_tokens',
+                    'context_tokens', 'maximum_output_tokens', 'chat_overhead_reserved',
+                    'total_reserved_tokens', 'payload_limit_bytes', 'legacy_character_limit'):
+            value = (capacity or {}).get(key)
+            if value is None or (type(value) is int and value >= 0):
+                self.capacity[key] = value
+        super().__init__(self._messages[self.reason])
+
+    def diagnostic(self):
+        return {'code': self.code, 'reason_code': self.reason,
+                'message': self._messages[self.reason], 'network_request': False,
+                **self.capacity}
+
 class ProviderError(SageError):
     code = "provider_error"
 
 class TransientProviderError(ProviderError):
     code = "transient_provider_error"
+
+class ValidationDetailError(ValueError):
+    """ValueError with a structured, ID-level validation diagnostic.
+
+    The detail dict carries only IDs and reference-number strings (source_ids,
+    reference_ids, candidate ids, reasons, allowed ID sub-tables). It never
+    contains paper full text: papers remain manager-private and agents can only
+    read them through the passages tool. Downstream surfaces must treat
+    ``detail`` as untrusted DATA (reference data for the repair), never as
+    instructions.
+    """
+    def __init__(self, message, detail):
+        self.detail = detail
+        super().__init__(message)
 
 class InvalidResponse(SageError):
     code = "invalid_response"
@@ -70,7 +114,15 @@ _VALIDATION_RULES = {
 _VALIDATION_FIELDS = frozenset(('$', 'discussion', 'experiment', 'plan_contract', 'idea', 'commentary',
     'status', 'evidence_ids', 'accepted_critique_ids', 'rejected_critique_ids', 'selected_index',
     'requirements', 'critique_id', 'requirement', 'rationale', 'uncertainty', 'issue',
-    'requested_change', 'support', 'reason', 'quote', 'queries', 'span_ids'))
+    'requested_change', 'support', 'reason', 'quote', 'queries', 'span_ids', 'capsule', 'entailment'))
+
+# Authored literal wrappers, never an arbitrary tag name from model/source text.
+# A rejected entailment response must say WHICH wrapper is missing; silently
+# reducing the trusted tag field to "$" made otherwise useful retries ambiguous.
+_REQUIRED_TAG_INSTRUCTIONS = {
+    'capsule': 'Return exactly one nonempty <capsule>...</capsule> wrapper containing the complete requested JSON object. Close all JSON arrays and objects before </capsule>. Do not return bare JSON, markdown fences, an empty wrapper, duplicate wrappers, or a partial closing tag.',
+    'entailment': 'Return exactly one nonempty <entailment>...</entailment> wrapper containing the complete requested JSON object. Close all JSON arrays and objects before </entailment>. Do not return bare JSON, markdown fences, an empty wrapper, duplicate wrappers, or a partial closing tag.',
+}
 
 
 class ValidationError(InvalidResponse):
@@ -78,7 +130,9 @@ class ValidationError(InvalidResponse):
     def __init__(self, rule='unspecified', field='$'):
         self.rule = rule if rule in _VALIDATION_RULES else 'unspecified'
         self.field = field if field in _VALIDATION_FIELDS else '$'
-        super().__init__(_VALIDATION_RULES[self.rule])
+        self.instruction = (_REQUIRED_TAG_INSTRUCTIONS.get(self.field, _VALIDATION_RULES[self.rule])
+                            if self.rule == 'required_tag' else _VALIDATION_RULES[self.rule])
+        super().__init__(self.instruction)
 
     def diagnostic(self):
-        return {'rule': self.rule, 'field': self.field, 'instruction': _VALIDATION_RULES[self.rule]}
+        return {'rule': self.rule, 'field': self.field, 'instruction': self.instruction}

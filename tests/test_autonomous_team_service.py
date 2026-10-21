@@ -311,8 +311,8 @@ class TeamServiceTests(unittest.TestCase):
         checkout.mkdir(parents=True)
         primary = checkout / 'conjectures.json'
         primary.write_text(json.dumps(candidate_document()), encoding='utf-8')
-        (checkout / 'CONJECTURES.md').write_text('Synthetic complete report fixture.\n' * 10,
-                                                encoding='utf-8')
+        from sage.autonomous.report import render_report
+        (checkout / 'CONJECTURES.md').write_bytes(render_report(primary.read_bytes()).encode('utf-8'))
         judgment = mock.AsyncMock(side_effect=AssertionError('Incomplete team must not be scored'))
         with mock.patch.object(self.service, 'judgment', judgment):
             result = asyncio.run(self.service.grade(primary, agent_id='researcher-0'))
@@ -346,7 +346,7 @@ class TeamServiceTests(unittest.TestCase):
                     'decisions': [],
                 })
                 self.assertNotIn('error', receipt)
-        status = self.post(team_token(self.master, 0), 'team', {'action': 'status'})
+        status = self.post(team_token(self.master, 0), 'team', {'action': 'status', 'detail': 'full'})
         synthesis = {'candidates': [], 'selected_ids': ['S0-C0']}
         for slot, record in status['frozen_proposals'].items():
             for candidate in record['document']['candidates']:
@@ -364,7 +364,13 @@ class TeamServiceTests(unittest.TestCase):
         checkout.mkdir(parents=True)
         copied = checkout / 'conjectures.json'
         copied.write_bytes(primary.read_bytes())
-        (checkout / 'CONJECTURES.md').write_text('Synthetic completed report.\n' * 10, encoding='utf-8')
+        from sage.autonomous.report import render_report
+        (checkout / 'CONJECTURES.md').write_bytes(render_report(primary.read_bytes(),
+            synthesis_version=receipt['version']).encode('utf-8'))
+        # Only post-synthesis coordinator reviews of registered artifacts count.
+        self.service.reviews = [{'id': 'synthesis-review-' + str(i), 'grading': False,
+                                 'research_slot': 0, 'time': '9999-01-01T00:00:00+00:00',
+                                 'input_sha256': receipt['primary_sha256']} for i in range(2)]
         judgment = mock.AsyncMock(return_value={'id': 'fixture-formal-grade', 'review': {'score': 0.5}})
         with mock.patch.object(self.service, 'judgment', judgment):
             for identity in ('researcher-1', None):
@@ -379,6 +385,16 @@ class TeamServiceTests(unittest.TestCase):
         self.assertEqual(allowed['score'], 0.5)
         judgment.assert_awaited_once()
         self.assertEqual(self.service.grades[-1]['agent_id'], 'researcher-0')
+        first_grade = self.service.grades[-1]
+        first_report = (self.service.private / first_grade['report_file']).read_bytes()
+        (checkout / 'CONJECTURES.md').write_bytes(render_report(primary.read_bytes(),
+            narrative='同一主数据的另一份解释性讨论。', synthesis_version=receipt['version']).encode('utf-8'))
+        with mock.patch.object(self.service, 'judgment',
+                               mock.AsyncMock(return_value={'id':'later-formal', 'review':{'score':0.4}})):
+            later = asyncio.run(self.service.grade(copied, agent_id='researcher-0'))
+        self.assertEqual(later['contract_errors'], [])
+        self.assertNotEqual(first_grade['report_file'], self.service.grades[-1]['report_file'])
+        self.assertEqual((self.service.private / first_grade['report_file']).read_bytes(), first_report)
         self.model.assert_not_called()
 
 

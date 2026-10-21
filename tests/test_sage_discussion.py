@@ -114,6 +114,12 @@ class HybridDiscussionTests(unittest.IsolatedAsyncioTestCase):
         left, right = default.to_dict(), explicit.to_dict()
         left['usage'].pop('elapsed_seconds', None)
         right['usage'].pop('elapsed_seconds', None)
+        # Runs have different observation times; retain every scientific value,
+        # prompt, event kind and ordering in this baseline-equivalence check.
+        for document in (left, right):
+            for event in document['audit']:
+                event.pop('time', None)
+                event.pop('elapsed_seconds', None)
         self.assertEqual(left, right)
         self.assertEqual(default_model.requests, explicit_model.requests)
 

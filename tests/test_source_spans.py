@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -11,6 +12,8 @@ from sage.types import Paper
 from sage.errors import InvalidResponse, ValidationError
 from sage.literature.spans import source_spans, validate_span_claims, extract_span_capsule
 from sage.autonomous.service import ResearchService
+from sage.autonomous.review import AXES, RUBRIC_VERSION, canonical_json, input_digest
+from sage.autonomous.novelty import FEEDBACK_VERSION
 
 
 class SourceSpanTests(unittest.TestCase):
@@ -99,16 +102,46 @@ class SourceSpanAsyncTests(unittest.IsolatedAsyncioTestCase):
             last_response_model='deepseek-test'
             last_usage={'prompt_tokens':10,'completion_tokens':5,'total_tokens':15}
             async def complete(self, stage, prompt, *, max_tokens):
-                return json.dumps({'score':0.2,'issues':[],'surviving_ids':[],'summary':'Requires work'})
+                if stage == 'autonomous.novelty_feedback':
+                    return json.dumps({'feedback_version': FEEDBACK_VERSION,
+                        'candidate_assessments': [{'candidate_id': 'C1', 'claims': [{
+                            'claim_id': 'claim-1', 'statement': 'Synthetic proposed prediction',
+                            'kind': 'finding', 'novelty_status': 'unknown',
+                            'closest_source_id': None, 'source_refs': [],
+                            'overlap': 'Not established', 'scientific_delta': 'Synthetic unverified delta',
+                            'evidence_limit': 'No prior-art evidence in this synthetic fixture'}],
+                            'novelty_moves': []}], 'advice_audits': [],
+                        'summary': 'Synthetic evidence unavailable; novelty unknown'})
+                return json.dumps({'rubric_version': RUBRIC_VERSION, 'calibration': 'none',
+                    'calibration_gap': 'Synthetic review fixture has no human-curated reference anchors',
+                    'candidate_reviews': [{'candidate_id': 'C1', 'dimensions': {
+                        axis: {'rating': 8, 'rationale': 'Synthetic proposal rationale', 'source_ids': []}
+                        for axis in AXES}, 'simplification_opportunities': [],
+                        'modernization_opportunities': [], 'drift_warning': 'NONE', 'verdict': 'REVISE'}],
+                    'issues': [], 'surviving_ids': ['C1'], 'summary': 'Synthetic unvalidated proposal review'})
             async def aclose(self): pass
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);service=ResearchService(root/'private',root,'topic')
-            raw='{"candidates": []}\n'
+            raw=json.dumps({'candidates': [{'id': 'C1', 'title': 'Synthetic primary artifact',
+                'hypothesis': 'Synthetic falsifiable prediction', 'source_ids': [],
+                'falsification': {'metric': {'score': 0.44}}}], 'selected_ids': ['C1'],
+                'score_context': 'PREVIOUS_REVIEW_SCORE_0.987654321',
+                'revision_after_eval': {'score': 0.987654321, 'summary': 'AUTHOR_CLAIM_ALL_FIXED'}}, indent=2)+'\n'
             with patch('sage.autonomous.service.OpenAIModel.from_env',return_value=Model()):
                 first=await service.judgment(raw,'method')
                 second=await service.judgment(raw,'method')
             self.assertNotEqual(first['request_file'],second['request_file'])
+            self.assertNotEqual(first['novelty_request_file'], second['novelty_request_file'])
             saved=json.loads((service.private/first['request_file']).read_text(encoding='utf-8'))
             self.assertEqual(saved['primary_raw'],raw)
-            self.assertIn(raw,saved['prompt'])
+            second_saved=json.loads((service.private/second['request_file']).read_text(encoding='utf-8'))
+            self.assertEqual(second_saved['primary_raw'], raw)
+            self.assertEqual(first['input_sha256'], hashlib.sha256(raw.encode()).hexdigest())
+            self.assertEqual(second['input_sha256'], first['input_sha256'])
+            self.assertNotIn(raw,saved['prompt'])
+            self.assertNotIn('PREVIOUS_REVIEW_SCORE_0.987654321', saved['prompt'])
+            self.assertNotIn('AUTHOR_CLAIM_ALL_FIXED', saved['prompt'])
+            self.assertIn(canonical_json(saved['scientific_input']), saved['prompt'])
+            self.assertEqual(first['scientific_input_sha256'], input_digest(saved['scientific_input']))
+            self.assertEqual(saved['scientific_input']['candidates'][0]['falsification']['metric']['score'], 0.44)
             self.assertFalse(first['independent_acceptance'])

@@ -40,7 +40,17 @@ class Literature:
             key = digest({'paper': paper_record(paper), 'article': paper.article, 'topic': topic})
             cache = getattr(self.runtime, '_capsule_cache', {})
             if key not in cache:
-                cache[key] = await extract_capsule(self.runtime, paper, topic)
+                if self.runtime.config.capsule_semantic_audit:
+                    from dataclasses import replace
+                    from .spans import extract_span_capsule
+                    from .entailment import capsule_view
+                    extracted = await extract_span_capsule(self.runtime, paper, topic, semantic_audit=True)
+                    # The extraction audit keeps the full card. Every consumer
+                    # receives the same copied, semantically labelled view, so
+                    # rejected raw claims cannot reappear in a duplicate ledger.
+                    cache[key] = replace(extracted, capsule=capsule_view(extracted.capsule))
+                else:
+                    cache[key] = await extract_capsule(self.runtime, paper, topic)
             self.runtime._capsule_cache = cache
             self.runtime.evidence_cards[paper.paper_id] = cache[key]
             return cache[key]

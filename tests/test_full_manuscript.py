@@ -105,6 +105,72 @@ class WholeManuscriptRegression(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(reviews),3)
         self.assertTrue(all('Recorded measurement and methodological interpretation.' in p for p in reviews))
         self.assertEqual(result['scientific_acceptance'],'not_assessed')
+        self.assertEqual(result['readiness'], 'requires_scientific_revision')
+        self.assertEqual(result['unresolved_research_gaps'],
+                         ['No real experiments in this synthetic software test.'])
+
+    async def run_gap_case(self, gaps, *, mode='document', rounds=1):
+        from sage.writing.manuscript import generate_manuscript, PLAN
+        class Runtime:
+            config = SimpleNamespace(refinement_rounds=rounds)
+            usage = {}
+            def __init__(self): self.requests = []
+            async def ask(self, stage, prompt, required, **kwargs):
+                self.requests.append((stage, prompt))
+                if '.review.' in stage:
+                    # Later review silence is not evidence of new experiments.
+                    found = gaps if '.review.0.' in stage else []
+                    value = {'review': json.dumps({'score': 9, 'issues': [],
+                                                   'unresolved_research_gaps': found})}
+                elif mode == 'document':
+                    value = {key: (title + ' recorded interpretation and mechanism. ') * 100
+                             for key, title, _ in PLAN}
+                    value['sources'] = json.dumps({key: ['measurement'] for key, _, _ in PLAN})
+                else:
+                    value = {'prose': 'Recorded measurement with explicit mechanism and uncertainty. ' * 100,
+                             'sources': '["measurement"]'}
+                kwargs['validate'](value)
+                return value
+        runtime = Runtime()
+        result = await generate_manuscript(runtime, {
+            'schema_version': 'sage.manuscript_evidence.v1', 'title': 'Synthetic gap regression',
+            'evidence': {'measurement': {'fixture': True}}, 'references': [], 'drafting_mode': mode})
+        return result, runtime.requests
+
+    async def test_research_gap_without_editorial_issues_is_revised_but_not_erased(self):
+        gap = 'No external baseline was measured on the confirmation tasks.'
+        result, requests = await self.run_gap_case(['  ' + gap + '  ', gap])
+        self.assertEqual(result['unresolved_research_gaps'], [gap])
+        self.assertEqual(result['readiness'], 'requires_scientific_revision')
+        self.assertEqual(len(result['revision_history']), 1)
+        self.assertEqual(len(result['reviews']), 2)
+        self.assertTrue(all(not r['unresolved_research_gaps'] for r in result['reviews'][-1]['panel']))
+        revision = next(prompt for stage, prompt in requests if '.document.revise.' in stage)
+        self.assertIn(gap, revision)
+        self.assertIn('do not fabricate measurements', revision)
+        self.assertIn('Writing cannot supply this research', revision)
+        self.assertEqual(result['scientific_acceptance'], 'not_assessed')
+
+    async def test_section_mode_discloses_gap_without_requesting_new_results(self):
+        gap = 'Independent samples are missing for the primary effect estimate.'
+        result, requests = await self.run_gap_case([gap], mode='sections')
+        revised = [(stage, prompt) for stage, prompt in requests if '.revise.' in stage]
+        self.assertEqual([stage for stage, _ in revised], ['manuscript.revise.0.limitations'])
+        self.assertIn(gap, revised[0][1])
+        self.assertIn('do not fabricate measurements', revised[0][1])
+        self.assertEqual(result['unresolved_research_gaps'], [gap])
+        self.assertEqual(result['readiness'], 'requires_scientific_revision')
+
+    async def test_research_gap_items_have_an_explicit_text_contract(self):
+        for gap in ('', '  ', None, 3, {}, ['missing evidence']):
+            with self.subTest(gap=gap), self.assertRaisesRegex(InvalidResponse, 'nonempty plain-text'):
+                await self.run_gap_case([gap], rounds=0)
+
+    async def test_clean_review_preserves_existing_external_review_status(self):
+        result, requests = await self.run_gap_case([])
+        self.assertEqual(result['unresolved_research_gaps'], [])
+        self.assertEqual(result['readiness'], 'requires_author_and_external_review')
+        self.assertFalse(any('.revise.' in stage for stage, _ in requests))
 
 
 if __name__=='__main__':unittest.main()

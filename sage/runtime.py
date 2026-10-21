@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+from datetime import datetime, timezone
 from typing import Callable, Awaitable, TypeVar
 from .config import RunConfig
 from .errors import BudgetExceeded, InvalidResponse, ProviderError, TransientProviderError, TruncatedResponse, RetrievalUnavailable, ConfigurationError, RateLimited, ValidationError
@@ -65,7 +66,9 @@ class Runtime:
             self.checkpoint.save(self)
 
     def event(self, stage: str, status: str, **fields):
-        self.audit.append({'sequence': len(self.audit) + 1, 'stage': stage, 'status': status, **fields})
+        self.audit.append({'sequence': len(self.audit) + 1, 'stage': stage, 'status': status,
+                           'time': datetime.now(timezone.utc).isoformat(),
+                           'elapsed_seconds': self.elapsed_before + self.clock() - self.started, **fields})
         self.persist()
         if self.event_sink is not None:
             self.event_sink(self, self.audit[-1])
@@ -120,6 +123,16 @@ class Runtime:
                     self.checkpoint.entries[key].update(status='succeeded', value=encode(value))
                 self.event(stage, 'succeeded', kind=kind, attempt=attempt)
                 return value
+            except asyncio.CancelledError:
+                # Cancellation ends the local attempt, but does not establish
+                # whether a remote provider completed or billed its request.
+                # Keep checkpoint replay ambiguous rather than silently retry.
+                if self.checkpoint and key:
+                    self.checkpoint.entries[key].update(status='pending',
+                        cancellation_requested=True, remote_outcome='unknown')
+                self.event(stage, 'cancelled', kind=kind, attempt=attempt,
+                           error_code='cancelled', remote_outcome='unknown')
+                raise
             except RateLimited as error:
                 # A 429 suspends fresh paper requests for this checkpoint lineage.
                 # No automatic retry can violate an unknown/long Retry-After.

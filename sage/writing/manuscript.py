@@ -284,6 +284,9 @@ Current manuscript: {json.dumps(chapters, ensure_ascii=False)}'''
         if on_progress:on_progress({'chapters':chapters,'development_history':development_history,'usage':dict(runtime.usage)})
     reviews = []
     history = []
+    # The evidence package is fixed for this writing run. Rewording a claim or
+    # a later reviewer omitting a gap cannot establish that new research exists.
+    research_gaps = []
     # Three diagnostic perspectives use the configured reviewer, which can be
     # the same model family; this is disclosed and never called independence.
     for cycle in range(runtime.config.refinement_rounds + 1):
@@ -297,7 +300,14 @@ controls, shallow sections, citation misuse and incoherent cross-section claims.
 Do not demand a positive result. Give a diagnostic score (1-10), not acceptance
 odds. Return <review>{{"score":0,"issues":[{{"section_id":"methods",
 "severity":"high|medium|low","problem":"specific issue","fix":"specific revision"}}],
-"unresolved_research_gaps":[]}}</review>. Use only existing section IDs.
+"unresolved_research_gaps":["Concrete missing research or evidence that writing alone cannot supply."]}}</review>.
+Use only existing section IDs. Put correctable exposition, attribution and claim
+scope in issues. Put missing measurements, controls, derivations or other needed
+research in unresolved_research_gaps as nonempty plain-text strings. These are
+advisory findings, not verified scientific judgments. Do not treat a new paragraph
+or a withdrawn claim as new experimental evidence.
+Previously recorded research gaps in this unchanged evidence package:
+{json.dumps(research_gaps, ensure_ascii=False)}
 Evidence: {context}
 Manuscript: {json.dumps(chapters, ensure_ascii=False)}
 END OF INPUT. Return ONLY <review>{{"score":6,"issues":[],"unresolved_research_gaps":[]}}</review>,
@@ -310,20 +320,39 @@ Write issue explanations as plain text, without TeX backslashes that could break
                     raise ValidationError('schema_keys','$')
                 if type(review['score']) not in (int, float) or not 1 <= review['score'] <= 10 or not isinstance(review['issues'], list) or not isinstance(review['unresolved_research_gaps'], list):
                     raise InvalidResponse('Review score or issue ledger invalid')
+                if any(not isinstance(gap, str) or not gap.strip() for gap in review['unresolved_research_gaps']):
+                    raise InvalidResponse('Unresolved research gaps must be nonempty plain-text strings')
                 for issue in review['issues']:
                     if not isinstance(issue, dict) or set(issue) != {'section_id','severity','problem','fix'} or issue['section_id'] not in {c['section_id'] for c in chapters} or issue['severity'] not in ('high','medium','low') or any(not isinstance(issue[k], str) for k in issue):
                         raise InvalidResponse('Review issue invalid')
             answer = await runtime.ask(f'manuscript.review.{cycle}.{role}', prompt, ('review',), validate=check_review, reviewer=True)
             panel.append({'perspective': role, **json.loads(answer['review'])})
         reviews.append({'cycle': cycle, 'panel': panel, 'independence': 'not_established'})
+        new_gaps = []
+        for review in panel:
+            for gap in review['unresolved_research_gaps']:
+                gap = gap.strip()
+                if gap not in research_gaps:
+                    research_gaps.append(gap)
+                    new_gaps.append(gap)
         if cycle == runtime.config.refinement_rounds: break
         issues = [i for r in panel for i in r['issues'] if i['severity'] in ('high','medium')]
+        # A gap-only panel still needs an honest manuscript response. Restrict
+        # that response to disclosure and claim scope; never request new results
+        # from a writing model or mark the underlying gap resolved by its prose.
+        issues.extend({'section_id': 'limitations', 'severity': 'high',
+                       'problem': gap,
+                       'fix': 'Acknowledge this missing research and its impact on the manuscript claims. '
+                              'Explain what new evidence would address it; do not fabricate measurements, '
+                              'controls, proofs or a successful resolution. Writing cannot supply this research.'}
+                      for gap in new_gaps)
         if not issues: break
         if document_mode:
             replacement=await draft_document(f'manuscript.document.revise.{cycle}',chapters,issues)
             history.append({'cycle':cycle,'before':chapters,'after':replacement,'review_issues':issues})
             chapters=replacement
-            if on_progress:on_progress({'chapters':chapters,'reviews':reviews,'revision_history':history,'usage':dict(runtime.usage)})
+            if on_progress:on_progress({'chapters':chapters,'reviews':reviews,'revision_history':history,
+                                        'unresolved_research_gaps':list(research_gaps),'usage':dict(runtime.usage)})
             continue
         for index, chapter in enumerate(chapters):
             selected = [i for i in issues if i['section_id'] == chapter['section_id']]
@@ -340,14 +369,16 @@ Whole manuscript: {json.dumps(chapters, ensure_ascii=False)}'''
             replacement = {'section_id': chapter['section_id'], 'title': chapter['title'], **parse_reply(answer)}
             history.append({'cycle': cycle, 'before': chapter, 'after': replacement, 'review_issues': selected})
             chapters[index] = replacement
-        if on_progress: on_progress({'chapters': chapters, 'reviews': reviews, 'revision_history': history, 'usage': dict(runtime.usage)})
+        if on_progress: on_progress({'chapters': chapters, 'reviews': reviews, 'revision_history': history,
+                                     'unresolved_research_gaps': list(research_gaps), 'usage': dict(runtime.usage)})
     main_words = sum(c['word_count'] for c in chapters if c['section_id'] not in ('abstract','appendix'))
     unresolved = [i for r in reviews[-1]['panel'] for i in r['issues'] if i['severity'] == 'high']
     return {'schema_version': 'sage.manuscript.v1', 'title': bundle['title'], 'chapters': chapters,
             'reviews': reviews, 'revision_history': history, 'main_text_words': main_words,
             'development_history':development_history,
+            'unresolved_research_gaps': research_gaps,
             'completeness': 'full_draft' if main_words >= 4000 else 'underdeveloped',
-            'readiness': 'requires_scientific_revision' if unresolved else 'requires_author_and_external_review',
+            'readiness': 'requires_scientific_revision' if unresolved or research_gaps else 'requires_author_and_external_review',
             'scientific_acceptance': 'not_assessed', 'usage': dict(runtime.usage)}
 
 

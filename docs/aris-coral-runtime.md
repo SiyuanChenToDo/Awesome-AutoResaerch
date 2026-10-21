@@ -1,5 +1,7 @@
 # ARIS / CORAL 实际接入入口
 
+本文描述 2026-10-18 接通的模块化 `sage run` / 固定实验入口，继续保留其范围。后续 `sage autonomous` 已通过原生 CORAL 管理器启动研究者、加载六项 ARIS 技能并执行团队猜想流程，见[原生入口](autonomous-conjectures.md)；不要把本文“不安装 skills”或受限 TaskGrader 的边界套到该原生入口。通用研究代码生成、实验执行与自动论文交接仍未由原生猜想入口实现。
+
 新增 [可执行科研闭环](closed-loop-runtime.md)：连接真实提案、共享讨论、两轮开发反馈、原生 CORAL GP 训练、一次留出评价、统计和报告；下述 `coral-evaluate` 小测试入口继续保留。
 
 这是可运行的增量实现，范围小于[整体整合方案](aris-coral-integration.md)。不安装上游 skills、不启动自动发布；上游源码与依赖单独安装。

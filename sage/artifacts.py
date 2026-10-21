@@ -4,6 +4,19 @@ import os
 from pathlib import Path
 
 
+def atomic_bytes(path, data):
+    """Preserve exact graded bytes across operating-system newline conventions."""
+    path = Path(path)
+    temporary = path.with_name(path.name + '.pending')
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0)
+    descriptor = os.open(temporary, flags, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
 def atomic_text(path, text):
     path = Path(path)
     temporary = path.with_name(path.name + '.pending')

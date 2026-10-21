@@ -21,7 +21,7 @@
 
 **Scientific Agent for Grounded Exploration** 是一个科研猜想发现与证据工作台。新增原生自主入口使用 [CORAL](https://github.com/Human-Agent-Society/CORAL) 管理 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，加载 [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 研究技能，自行调研、提出猜想、查新、批评和修订。既有模块化提案、实验与写作代码位于 [sage/](sage/)，包含对 [CoI-Agent / Chain of Ideas](https://github.com/DAMO-NLP-SG/CoI-Agent) 与 [Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) 的功能拆分与改造。
 
-**当前软件验证**：509 项离线测试已在 AutoDL Linux 和 Windows 通过（Windows 跳过 3 项 Unix 专用权限检查），包含随后修复的团队默认工具预算。原生 DSH 会话续接已修复并完成真实恢复验收，见[续接验证](docs/native-session-validation-20261018.md)。四研究者、两轮互评的真实团队闭环已完成：4 份初稿、8 次互评、8 次修订、2 版综合和 2 次正式评分，167 项产物完整性检查通过，见[团队运行验证与边界](docs/native-team-validation-20261018.md)。此前 run-10 是[单主研究者历史运行](docs/native-conjecture-validation-20261018.md)。团队过程完成不证明科研质量提高，产物仍是待实验与独立复核的猜想。
+**评分修复前的软件验证**：509 项离线测试已在 AutoDL Linux 和 Windows 通过（Windows 跳过 3 项 Unix 专用权限检查），包含随后修复的团队默认工具预算。原生 DSH 会话续接已修复并完成真实恢复验收，见[续接验证](docs/native-session-validation-20261018.md)。四研究者、两轮互评的真实团队闭环已完成：4 份初稿、8 次互评、8 次修订、2 版综合和 2 次正式评分，167 项产物完整性检查通过，见[团队运行验证与边界](docs/native-team-validation-20261018.md)。此前 run-10 是[单主研究者历史运行](docs/native-conjecture-validation-20261018.md)。团队过程完成不证明科研质量提高，产物仍是待实验与独立复核的猜想。
 
 **历史验证范围**：较早的 `sage closed-loop` 使用固定真实论文语料和固定符号回归程序，完成了开发、确认、统计、报告和反算核对。它验证子实验的工程连接，不能当作全自主科研的证明。详见[闭环验证](docs/closed-loop-validation-20261018.md)、[写作修复验证](docs/writing-validation-20261018.md)与[较早的接入验证](docs/aris-coral-validation-20261018.md)。
 
@@ -29,9 +29,17 @@
 
 **自主猜想入口**：`sage autonomous` 由原生 CORAL 管理器运行 DeepSeek Harness，挂载 ARIS 原始研究技能，调用 SAGE 的真实检索和跨章节证据提炼工具。默认四位独立会话的研究者、两轮同伴互评，经过冻结提案、逐条修订和协调者综合；见[团队协议与验收](docs/native-team-protocol.md)及[安装与使用](docs/autonomous-conjectures.md)。现有模块拆分与证据卡类别保持原样。只有单一模型 API 时，输出是待验证猜想，同家族多会话互评不算 ARIS 跨家族独立验收。
 
+**2026-10-19 的运行契约**：交付六项 ARIS 原始技能及校准参考；每次完整评阅有两个阶段，默认正常两次模型请求、含阶段格式修复最多四次。新增逐条证据支持和同伴建议审计、最新稿协议及报告绑定、等待时停止模型轮询；详见[可靠性修复](docs/autonomous-reliability.md)。下方及链接中的 2026-10-18 运行统计属于历史冻结版本，不因这些修复改写；软件回归通过和新一轮科研质量分别验收。
+
 **完整论文写作更新**：已移除原先每节一段、160 词 / 1400 字符的篇幅限制。新增 `sage write-paper`，支持完整正文、公式、已核对的引文、实测图表、整篇多视角评阅与修订，以及 LaTeX / Markdown 输出；见[完整论文入口](docs/full-manuscript.md)。它将论文完整性与科研结论是否成立分别记录。原 `write-report` 保留为证据账本兼容入口。
 
+当前 `write-paper` 的 CLI 交接与章节指令围绕已有符号回归闭环证据；它读取实际测量和提供的图表，不会把自主猜想自动变成已完成实验的论文。评阅提出的研究缺口会跨轮保留并阻止进入仅待作者复核状态，修正文案不能替代补做研究。
+
 ## 从一个问题，到一份可追溯的提案
+
+**原生评分修复**：已将ARIS原七维及校准依赖接入native评分，新增严格评阅验证、综合阶段门控、目标字段修订与最新有效稿导出。[四项目原版rubric及接线](docs/upstream-review-rubrics.md)列出原标准与此前遗漏；[修复说明](docs/scientific-review-repair.md)区分新口径与历史分数。
+
+**新颖性反馈升级**：每次原生评阅在七维评分后增加一次不看分数的主张比较与建议核查，分别判断批评和修复，引用管理器持有的原文位置，并提出待验证的新颖性改进动作。[实现、提示词与后续验证](docs/novelty-judge.md)说明已接入内容和仍待检验的质量效果；同家族复核不构成独立验收。
 
 ```text
 研究问题 → 查询与检索 → 文献链与证据 → 候选想法 → 比较与筛查 → 实验方案
@@ -164,7 +172,7 @@ python -m sage laboratory --mode offline --discussion-mode hybrid --backend fixt
 
 详见[讨论机制与参数](docs/coi-laboratory-discussion.md)与[验证记录](docs/hybrid-validation.md)。离线测试检查数据传递、来源归属和预算；不能据此断言讨论提高科研质量。
 
-ARIS 的多视角构思、逐主张查新和评审收据已接入 research 提案路径，可调用固定原版评审门控。CORAL 原生 SubprocessGrader 支持受审查的表达式小测试，以及 `closed-loop` 的固定 GP 训练与留出评价。编码代理池、通用科研代码生成执行和独立科学复核尚未接入。[运行入口与边界](docs/aris-coral-runtime.md) · [整体整合设计](docs/aris-coral-integration.md)
+以上是模块化 research 提案路径：ARIS 的多视角构思、逐主张查新和评审收据已接入，可调用固定原版评审门控；CORAL SubprocessGrader 支持受审查的表达式小测试及 `closed-loop` 的固定 GP 训练与留出评价。后续 `sage autonomous` 已接通原生研究者调度与团队猜想流程；通用科研代码生成执行、猜想到实验论文的自动交接和独立科学复核仍未实现。[模块化入口与边界](docs/aris-coral-runtime.md) · [原生猜想入口](docs/autonomous-conjectures.md) · [历史整合设计](docs/aris-coral-integration.md)
 
 ## 慢慢建设，先把每一步做实
 

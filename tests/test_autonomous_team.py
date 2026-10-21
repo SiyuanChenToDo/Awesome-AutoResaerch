@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from sage.autonomous.team import ROLES, TeamBoard
+from sage.autonomous.protocol import protocol_descriptor
 
 
 def sha(value):
@@ -42,6 +43,7 @@ class TeamBoardTests(unittest.TestCase):
         return [{'id': f'R{number}-slot{slot}', 'candidate_id': 'C0', 'kind': kind,
                  'problem': 'The synthetic control is underspecified',
                  'repair': 'Specify a matched synthetic control',
+                 'target_fields': ['hypothesis'],
                  'source_ids': ['fixture-1'] if kind == 'factual' else []}]
 
     def review_all(self, number=1, empty=False):
@@ -94,6 +96,25 @@ class TeamBoardTests(unittest.TestCase):
                     board.register(1, *values)
             with self.assertRaises(ValueError):
                 board.register(0, 'native-other', self.root / 'other', 'session-other')
+
+    def test_peer_proof_issue_requires_actual_proof_repair(self):
+        self.documents[1]['candidates'][0]['proof'] = 'Fixture invalid proof'
+        self.propose_all()
+        for slot in range(4):
+            status = self.board.status(slot)
+            issue = self.issues(slot) if slot == 0 else []
+            if issue:
+                issue[0]['target_fields'] = ['proof']
+            self.board.review(slot, status['review_target'], status['target_primary_sha256'], issue, expected_round=1)
+        document = copy.deepcopy(self.documents[1])
+        decision = [{'issue_id': 'R1-slot0', 'decision': 'accepted', 'reason': 'Fixture proof repair',
+                     'source_ids': [], 'change': 'Replaced the invalid step'}]
+        document['candidates'][0]['risks'] = ['An unrelated risk does not repair the proof']
+        with self.assertRaises(ValueError):
+            self.board.revise(1, document, sha(document), decision, expected_round=1)
+        document['candidates'][0]['proof'] = 'Fixture proof with the missing condition'
+        receipt = self.board.revise(1, document, sha(document), decision, expected_round=1)
+        self.assertEqual(receipt['operation'], 'revise')
 
     def test_unregistered_and_invalid_slots_are_rejected(self):
         board = TeamBoard(self.root / 'unregistered')
@@ -210,6 +231,134 @@ class TeamBoardTests(unittest.TestCase):
         return [{'issue_id': issue['id'], 'decision': 'accepted', 'reason': 'Synthetic repair',
                  'source_ids': [], 'change': 'Synthetic candidate response'}]
 
+    def review_targets(self, targets, *, canonical=True):
+        if canonical:
+            self.documents[0]['candidates'][0]['protocol'] = protocol_descriptor()['template']
+        self.propose_all()
+        receipts = []
+        for slot in range(4):
+            status = self.board.status(slot)
+            issues = self.issues(slot) if slot == 3 else []
+            if issues:
+                issues[0]['target_fields'] = targets
+            receipts.append(self.board.review(slot, status['review_target'], status['target_primary_sha256'],
+                                              issues, expected_round=1))
+        return receipts[-1]
+
+    def test_sample_size_alias_binds_canonical_leaf_and_records_repair(self):
+        review = self.review_targets(['sample_size'])
+        self.assertEqual(review['resolved_target_paths']['R1-slot3'],
+                         {'sample_size': ['protocol.analysis.sample_size']})
+        document = copy.deepcopy(self.documents[0])
+        document['candidates'][0]['protocol']['analysis']['sample_size'] = 200
+        receipt = self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+        change = receipt['issue_changes']['R1-slot3']
+        self.assertEqual(change['changed_canonical_paths'], ['protocol.analysis.sample_size'])
+        self.assertEqual(change['resolved_target_paths'], review['resolved_target_paths']['R1-slot3'])
+        self.assertEqual(change['scientific_resolution'], 'not_verified')
+
+    def test_sample_size_cannot_be_repaired_by_budget_risk_or_alias(self):
+        self.review_targets(['sample_size'])
+        for addition in ('new_alias', 'budget', 'risk', 'method'):
+            with self.subTest(addition=addition):
+                document = copy.deepcopy(self.documents[0]); candidate = document['candidates'][0]
+                if addition == 'new_alias':
+                    candidate['sample_size'] = 200
+                elif addition == 'budget':
+                    candidate['protocol']['resources']['compute_budget'] = '200 GPU hours'
+                elif addition == 'risk':
+                    candidate['risks'] = ['Acknowledge imprecision']
+                else:
+                    candidate['protocol']['analysis']['method'] = 'Paired analysis'
+                with self.assertRaisesRegex(ValueError, 'targeted fields'):
+                    self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+
+    def test_preexisting_mirror_does_not_override_canonical_target(self):
+        self.documents[0]['candidates'][0]['sample_size'] = 100
+        self.review_targets(['sample_size'])
+        document = copy.deepcopy(self.documents[0]); document['candidates'][0]['sample_size'] = 200
+        with self.assertRaisesRegex(ValueError, 'targeted fields'):
+            self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+
+    def test_legacy_top_level_sample_size_and_missing_field_still_supported(self):
+        self.documents[0]['candidates'][0]['sample_size'] = 100
+        review = self.review_targets(['sample_size', 'power_analysis'], canonical=False)
+        self.assertEqual(review['resolved_target_paths']['R1-slot3'],
+                         {'sample_size': ['sample_size'], 'power_analysis': ['power_analysis']})
+        document = copy.deepcopy(self.documents[0])
+        document['candidates'][0].update(sample_size=200, power_analysis='Pilot required')
+        receipt = self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+        self.assertEqual(receipt['issue_changes']['R1-slot3']['changed_canonical_paths'],
+                         ['power_analysis', 'sample_size'])
+
+    def test_explicit_protocol_method_path_ignores_other_analysis_fields(self):
+        self.review_targets(['protocol.analysis.method'])
+        document = copy.deepcopy(self.documents[0])
+        document['candidates'][0]['protocol']['analysis']['sample_size'] = 100
+        with self.assertRaisesRegex(ValueError, 'targeted fields'):
+            self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+        document['candidates'][0]['protocol']['analysis']['method'] = 'Paired bootstrap'
+        receipt = self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+        self.assertEqual(receipt['issue_changes']['R1-slot3']['changed_canonical_paths'],
+                         ['protocol.analysis.method'])
+
+    def test_unknown_protocol_path_is_rejected_when_review_is_frozen(self):
+        self.propose_all(); status = self.board.status(0)
+        for path in ('protocol.quality_score', 'protocol.analysis.sample_size.typo', 'title', 'protocol.schema_version'):
+            issue = self.issues(0); issue[0]['target_fields'] = [path]
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'scientific fields'):
+                self.board.review(0, status['review_target'], status['target_primary_sha256'], issue, expected_round=1)
+
+    def test_legacy_review_receipt_resolves_against_frozen_proposal(self):
+        self.review_targets(['power_analysis'])
+        self.board.state['rounds']['1']['reviews']['3']['receipt'].pop('resolved_target_paths')
+        document = copy.deepcopy(self.documents[0])
+        document['candidates'][0]['protocol']['analysis']['power']['assumptions'] = 'Pilot covariance required'
+        receipt = self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+        self.assertEqual(receipt['issue_changes']['R1-slot3']['changed_canonical_paths'],
+                         ['protocol.analysis.power'])
+
+    def test_frozen_path_binding_cannot_be_reinterpreted_at_revision(self):
+        self.review_targets(['sample_size'])
+        self.board.state['rounds']['1']['reviews']['3']['receipt']['resolved_target_paths']['R1-slot3'] = {
+            'sample_size': ['protocol.resources.compute_budget']}
+        document = copy.deepcopy(self.documents[0])
+        document['candidates'][0]['protocol']['analysis']['sample_size'] = 200
+        with self.assertRaisesRegex(ValueError, 'Frozen review target paths'):
+            self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+
+    def test_metric_leaf_projection_ignores_order_role_and_endpoint_definition(self):
+        protocol = protocol_descriptor()['template']
+        second = copy.deepcopy(protocol['endpoints'][0]); second['id'] = 'E2'
+        # review_targets supplies the same template; add the second endpoint
+        # before freezing explicitly to exercise stable endpoint identities.
+        self.documents[0]['candidates'][0]['protocol'] = protocol
+        protocol['endpoints'].append(second)
+        self.review_targets(['metrics'], canonical=False)
+        document = copy.deepcopy(self.documents[0])
+        endpoints = document['candidates'][0]['protocol']['endpoints']
+        endpoints.reverse(); endpoints[0].update(role='secondary', definition='Unrelated prose')
+        with self.assertRaisesRegex(ValueError, 'targeted fields'):
+            self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+        endpoints[0]['metric'] = 'Paired difference'
+        receipt = self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+        self.assertEqual(receipt['issue_changes']['R1-slot3']['changed_canonical_paths'],
+                         ['protocol.endpoints[*].metric'])
+
+    def test_compute_budget_alias_ignores_resource_status_and_stopping_rule(self):
+        self.review_targets(['compute_budget'])
+        document = copy.deepcopy(self.documents[0])
+        document['candidates'][0]['protocol']['resources'].update(status='estimated', stopping_rule='Stop at 100 items')
+        with self.assertRaisesRegex(ValueError, 'targeted fields'):
+            self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+
+    def test_removing_protocol_cannot_switch_to_top_level_alias(self):
+        self.review_targets(['sample_size'])
+        document = copy.deepcopy(self.documents[0])
+        document['candidates'][0].pop('protocol'); document['candidates'][0]['sample_size'] = 200
+        with self.assertRaisesRegex(ValueError, 'preserve the canonical protocol'):
+            self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+
     def test_accepted_metadata_or_title_only_change_is_rejected(self):
         self.propose_all(); self.review_all()
         for key, value in [('acknowledged', True), ('title', 'Cosmetically renamed hypothesis'),
@@ -228,12 +377,64 @@ class TeamBoardTests(unittest.TestCase):
                 self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
 
     def test_accepted_new_source_can_count_as_content_change(self):
-        self.propose_all(); self.review_all()
+        self.propose_all()
+        for slot in range(4):
+            status = self.board.status(slot)
+            issues = self.issues(slot)
+            issues[0]['target_fields'] = ['source_ids']
+            self.board.review(slot, status['review_target'], status['target_primary_sha256'],
+                              issues, expected_round=1)
         document = copy.deepcopy(self.documents[0])
         document['candidates'][0]['source_ids'].append('fixture-new-source')
         # The ResearchService, rather than this isolated state board, must
         # authenticate that the new source was actually retrieved.
         self.board.revise(0, document, sha(document), self.accepted_decision(), expected_round=1)
+
+    def test_unrelated_risk_or_source_change_cannot_discharge_hypothesis_issue(self):
+        self.propose_all(); self.review_all()
+        for field, value in [('risks',['We acknowledge the problem']),
+                              ('source_ids',['fixture-1','fixture-2','fixture-new'])]:
+            document=copy.deepcopy(self.documents[0])
+            document['candidates'][0][field]=value
+            with self.assertRaisesRegex(ValueError,'targeted fields'):
+                self.board.revise(0,document,sha(document),self.accepted_decision(),expected_round=1)
+
+    def test_one_hypothesis_edit_does_not_discharge_a_separate_control_issue(self):
+        self.propose_all()
+        for slot in range(4):
+            status=self.board.status(slot)
+            issues=self.issues(slot)
+            extra=copy.deepcopy(issues[0]); extra['id']+='-control'
+            extra['target_fields']=['falsification']
+            self.board.review(slot,status['review_target'],status['target_primary_sha256'],
+                              issues+[extra],expected_round=1)
+        document=copy.deepcopy(self.documents[0])
+        document['candidates'][0]['hypothesis']+=' corrected'
+        decisions=[{'issue_id':issue['id'],'decision':'accepted','reason':'Fixture repair',
+                    'source_ids':[],'change':'Updated candidate'}
+                   for issue in self.board.snapshot(0)['incoming_issues']]
+        with self.assertRaisesRegex(ValueError,'targeted fields'):
+            self.board.revise(0,document,sha(document),decisions,expected_round=1)
+
+    def test_already_rejected_candidate_is_not_a_new_rejection_for_every_issue(self):
+        for document in self.documents.values():
+            document['candidates'][0].update(disposition='rejected',rejection_reason='Already rejected')
+            document['selected_ids']=['C1']
+        self.propose_all(); self.review_all()
+        document=copy.deepcopy(self.documents[0])
+        document['candidates'][0]['rejection_reason']+='; reiterated'
+        with self.assertRaisesRegex(ValueError,'targeted fields'):
+            self.board.revise(0,document,sha(document),self.accepted_decision(),expected_round=1)
+
+    def test_real_repair_receipt_does_not_claim_scientific_resolution(self):
+        self.propose_all(); self.review_all()
+        document=copy.deepcopy(self.documents[0])
+        document['candidates'][0]['hypothesis']+=' with the specified control'
+        receipt=self.board.revise(0,document,sha(document),self.accepted_decision(),expected_round=1)
+        self.assertEqual(receipt['scientific_resolution'],'not_verified')
+        change=next(iter(receipt['issue_changes'].values()))
+        self.assertEqual(change['changed_target_fields'],['hypothesis'])
+        self.assertEqual(change['scientific_resolution'],'not_verified')
 
     def test_accepting_factual_criticism_can_inherit_the_issue_source(self):
         self.propose_all()

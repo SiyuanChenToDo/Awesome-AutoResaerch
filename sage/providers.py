@@ -17,11 +17,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from functools import partial
+import hashlib
 import http.client
 import importlib
 import json
 import math
 import os
+from pathlib import Path
 import re
 import socket
 import ssl
@@ -29,12 +31,27 @@ import time
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
-from .errors import ConfigurationError, InvalidResponse, ProviderError, TransientProviderError
+from .errors import (ConfigurationError, InvalidResponse, ProviderError,
+                     RequestCapacityError, TransientProviderError)
 from .types import Paper
 
 _GRAPH_ROOT = "https://api.semanticscholar.org/graph/v1"
 _PAPER_FIELDS = "paperId,title,abstract,year,url,citationCount,publicationDate"
 _TRANSIENT_STATUSES = {408, 409, 425, 429}
+
+# Official model capability and offline tokenizer, verified 2026-10-19.
+# https://api-docs.deepseek.com/api/list-models/
+# https://api-docs.deepseek.com/quick_start/token_usage/
+# The installer caches JSON only; downloaded Python is never imported.
+DEEPSEEK_V4_TOKENIZER_SHA256 = '89085f12ef79460ac5f66d1119325ddfc694b4ab209d80bbd81d35f081dc9614'
+DEEPSEEK_CONTEXT_TOKENS = 1_048_576
+DEEPSEEK_MAX_OUTPUT_TOKENS = 393_216
+CHAT_OVERHEAD_RESERVE = 4096
+MODEL_PAYLOAD_LIMIT_BYTES = 8 * 1024 * 1024
+
+
+def deepseek_tokenizer_path():
+    return Path.home() / '.cache' / 'sage' / 'tokenizers' / 'deepseek-v4' / 'tokenizer.json'
 
 
 def parse_bool(value: object, *, name: str = "boolean setting") -> bool:
@@ -158,9 +175,13 @@ class OpenAIConfig:
     provider: str = "openai"
     deepseek_thinking: str = "disabled"
     proxy_url: str | None = field(default=None, repr=False)
+    deepseek_tokenizer_path: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         _proxy_url(self.proxy_url)
+        if self.deepseek_tokenizer_path is not None and (
+                not isinstance(self.deepseek_tokenizer_path, str) or not self.deepseek_tokenizer_path.strip()):
+            raise ConfigurationError('Tokenizer asset path must be nonempty text')
         if self.provider not in ("openai", "deepseek"):
             raise ConfigurationError("SAGE_MODEL_PROVIDER must be openai or deepseek")
         if self.deepseek_thinking not in ("enabled", "disabled"):
@@ -215,7 +236,8 @@ class OpenAIConfig:
                    api_version=version, embedding_model=embedding_model,
                    embedding_endpoint=embedding_endpoint, embedding_api_key=embedding_key,
                    embedding_api_version=embedding_version, provider=provider, deepseek_thinking=thinking,
-                   proxy_url=_environment_proxy(env))
+                   proxy_url=_environment_proxy(env),
+                   deepseek_tokenizer_path=_setting(env, 'SAGE_DEEPSEEK_V4_TOKENIZER_PATH'))
 
 
 class OpenAIModel:
@@ -234,6 +256,9 @@ class OpenAIModel:
         self._owns_client = client is None
         self._owns_embedding_client = embedding_client is None
         self.request_count = 0
+        self._tokenizer = None
+        self._capacity_cache = None
+        self.last_request_capacity = None
 
     @classmethod
     def from_env(cls, *, role: str = "main", env: Mapping[str, str] | None = None,
@@ -288,11 +313,100 @@ class OpenAIModel:
             self._client = self._make_client()
         return self._client
 
+    def _official_deepseek_flash(self):
+        if self.config.provider != 'deepseek' or self.config.model != 'deepseek-flash':
+            return False
+        endpoint = self.config.endpoint or 'https://api.deepseek.com'
+        parts = urlsplit(endpoint)
+        return (parts.scheme == 'https' and parts.hostname == 'api.deepseek.com'
+                and parts.port in (None, 443) and parts.path.rstrip('/') in ('', '/v1'))
+
+    def _load_tokenizer(self, capacity):
+        if self._tokenizer is not None:
+            return self._tokenizer
+        path = (Path(self.config.deepseek_tokenizer_path).expanduser()
+                if self.config.deepseek_tokenizer_path else deepseek_tokenizer_path())
+        try:
+            with path.open('rb') as stream:
+                raw = stream.read(MODEL_PAYLOAD_LIMIT_BYTES + 1)
+        except OSError:
+            raise RequestCapacityError('tokenizer_asset_missing', capacity) from None
+        if (len(raw) > MODEL_PAYLOAD_LIMIT_BYTES or
+                hashlib.sha256(raw).hexdigest() != DEEPSEEK_V4_TOKENIZER_SHA256):
+            raise RequestCapacityError('tokenizer_asset_invalid', capacity)
+        try:
+            module = importlib.import_module('tokenizers')
+            self._tokenizer = module.Tokenizer.from_str(raw.decode('utf-8'))
+        except Exception:
+            raise RequestCapacityError('tokenizer_unavailable', capacity) from None
+        return self._tokenizer
+
+    def preflight(self, prompt: str, *, max_tokens: int) -> dict:
+        """No network: verify the actual prompt, including every repair suffix.
+
+        Text-token counts plus an explicit chat allowance are an offline check,
+        not server-certified usage. Unknown deployments retain their legacy
+        character bound and never inherit the official Flash context size.
+        """
+        official = self._official_deepseek_flash()
+        capacity = {'schema_version': 'sage.model-capacity.v1',
+            'profile': 'official_deepseek_flash_v4' if official else 'unverified_legacy_character_bound',
+            'input_characters': len(prompt) if isinstance(prompt, str) else None,
+            'input_utf8_bytes': None, 'text_tokens': None,
+            'requested_output_tokens': max_tokens if type(max_tokens) is int and max_tokens >= 0 else None,
+            'context_tokens': DEEPSEEK_CONTEXT_TOKENS if official else None,
+            'maximum_output_tokens': DEEPSEEK_MAX_OUTPUT_TOKENS if official else 65_536,
+            'chat_overhead_reserved': CHAT_OVERHEAD_RESERVE if official else None,
+            'total_reserved_tokens': None, 'payload_limit_bytes': MODEL_PAYLOAD_LIMIT_BYTES,
+            'legacy_character_limit': None if official else 1_000_000,
+            'tokenizer_sha256': DEEPSEEK_V4_TOKENIZER_SHA256 if official else None,
+            'measurement_scope': ('official_offline_text_tokens_plus_disclosed_chat_allowance_not_server_usage'
+                                  if official else 'character_bound_only_model_context_unverified')}
+        self.last_request_capacity = dict(capacity)
+
+        def reject(reason):
+            self.last_request_capacity = dict(capacity, status='rejected', reason_code=reason)
+            raise RequestCapacityError(reason, capacity)
+
+        if not isinstance(prompt, str) or not prompt.strip():
+            reject('invalid_prompt')
+        if type(max_tokens) is not int or not 1 <= max_tokens <= capacity['maximum_output_tokens']:
+            reject('invalid_output_budget')
+        # Avoid encoding arbitrarily huge input merely to reject the byte bound.
+        if len(prompt) > MODEL_PAYLOAD_LIMIT_BYTES:
+            reject('payload_limit_exceeded')
+        try:
+            raw = prompt.encode('utf-8')
+        except UnicodeError:
+            reject('invalid_prompt')
+        capacity['input_utf8_bytes'] = len(raw)
+        if len(raw) > MODEL_PAYLOAD_LIMIT_BYTES:
+            reject('payload_limit_exceeded')
+        if not official and len(prompt) > 1_000_000:
+            reject('unknown_model_capacity')
+        cache_key = (hashlib.sha256(raw).digest(), max_tokens)
+        if self._capacity_cache is not None and self._capacity_cache[0] == cache_key:
+            self.last_request_capacity = dict(self._capacity_cache[1])
+            return dict(self.last_request_capacity)
+        if official:
+            try:
+                tokenizer = self._load_tokenizer(capacity)
+                capacity['text_tokens'] = len(tokenizer.encode(prompt, add_special_tokens=False).ids)
+            except RequestCapacityError as exc:
+                self.last_request_capacity = dict(capacity, status='rejected', reason_code=exc.reason)
+                raise
+            except Exception:
+                reject('tokenizer_unavailable')
+            capacity['total_reserved_tokens'] = (capacity['text_tokens'] + max_tokens + CHAT_OVERHEAD_RESERVE)
+            if capacity['total_reserved_tokens'] > DEEPSEEK_CONTEXT_TOKENS:
+                reject('context_capacity_exceeded')
+        capacity['status'] = 'passed'
+        self.last_request_capacity = dict(capacity)
+        self._capacity_cache = (cache_key, dict(capacity))
+        return dict(capacity)
+
     async def complete(self, stage: str, prompt: str, *, max_tokens: int) -> str:
-        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1_000_000:
-            raise ConfigurationError("Model prompt must contain 1 to 1000000 characters")
-        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 65_536:
-            raise ConfigurationError("max_tokens must be an integer from 1 to 65536")
+        self.preflight(prompt, max_tokens=max_tokens)
         client = self._get_client()
         self.request_count += 1
         # Select the wire contract explicitly, never by guessing from the hostname.

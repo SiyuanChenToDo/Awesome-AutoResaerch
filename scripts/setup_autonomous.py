@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import zipfile
+import io
 from urllib.request import urlopen
 
 NODE = 'v24.22.0'
@@ -18,6 +20,39 @@ NODE_SHA256 = 'cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008'
 DSH = '0.2.0-rc.2'
 ARIS = '15c0b799e6cd5fbc4da381a5786dd0bc2cdf15ee'
 CORAL = '0123dfb939b35228cf2c1fde224cd0561e727408'
+TOKENIZERS = '0.22.2'
+DEEPSEEK_TOKENIZER_URL = 'https://cdn.deepseek.com/api-docs/deepseek_v4_tokenizer.zip'
+DEEPSEEK_TOKENIZER_ZIP_SHA256 = 'e7310d1dafe0a86d8a5629fe78a7c763760f651db9b8682718a1781dcd6fe495'
+DEEPSEEK_TOKENIZER_JSON_SHA256 = '89085f12ef79460ac5f66d1119325ddfc694b4ab209d80bbd81d35f081dc9614'
+
+
+def install_deepseek_tokenizer():
+    """Cache only the pinned official vocabulary JSON; never execute archive code."""
+    target = Path(os.environ.get('SAGE_DEEPSEEK_V4_TOKENIZER_PATH',
+        Path.home() / '.cache' / 'sage' / 'tokenizers' / 'deepseek-v4' / 'tokenizer.json')).expanduser().absolute()
+    if target.is_symlink():
+        raise SystemExit('Tokenizer cache must not be a symlink')
+    if target.exists():
+        if (target.stat().st_size > 8 * 1024 * 1024 or
+                hashlib.sha256(target.read_bytes()).hexdigest() != DEEPSEEK_TOKENIZER_JSON_SHA256):
+            raise SystemExit('Tokenizer cache checksum mismatch; restore the pinned vocabulary before running')
+        return target
+    with urlopen(DEEPSEEK_TOKENIZER_URL, timeout=120) as response:
+        raw = response.read(4 * 1024 * 1024 + 1)
+    if len(raw) > 4 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != DEEPSEEK_TOKENIZER_ZIP_SHA256:
+        raise SystemExit('Official tokenizer archive checksum or byte limit mismatch')
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        info = archive.getinfo('deepseek_v4_tokenizer/tokenizer.json')
+        if info.file_size > 8 * 1024 * 1024:
+            raise SystemExit('Tokenizer vocabulary exceeds installation byte limit')
+        vocabulary = archive.read(info)
+    if hashlib.sha256(vocabulary).hexdigest() != DEEPSEEK_TOKENIZER_JSON_SHA256:
+        raise SystemExit('Official tokenizer vocabulary checksum mismatch')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(target.name + '.setup-tmp')
+    temporary.write_bytes(vocabulary)
+    temporary.replace(target)
+    return target
 
 
 def run(argv, **kwargs):
@@ -70,7 +105,9 @@ def main():
     if not (venv / 'bin' / 'python').is_file():
         run([sys.executable, '-m', 'venv', venv])
     python = venv / 'bin' / 'python'
-    run([python, '-m', 'pip', 'install', 'uv', 'openai', 'pypdf', '-e', home / 'CORAL'])
+    run([python, '-m', 'pip', 'install', 'uv', 'openai', 'pypdf', 'tokenizers==' + TOKENIZERS,
+         '-e', home / 'CORAL'])
+    tokenizer = install_deepseek_tokenizer()
     frozen = subprocess.check_output([str(python), '-c',
         'import importlib.metadata as m;print("\\n".join(sorted({d.metadata["Name"]+"=="+d.version '
         'for d in m.distributions() if d.metadata.get("Name", "").lower() != "coral"})))'], text=True)
@@ -84,7 +121,10 @@ def main():
     config = {'coral_python': str(python), 'aris_root': str(home / 'ARIS'),
               'dsh': str(dsh_dir / 'node_modules' / '.bin' / 'dsh'),
               'path': [str(node_dir / 'bin'), str(venv / 'bin'), str(pnpm.parent)],
-              'versions': {'node': NODE, 'dsh': DSH, 'ARIS': ARIS, 'CORAL': CORAL}}
+              'versions': {'node': NODE, 'dsh': DSH, 'ARIS': ARIS, 'CORAL': CORAL,
+                           'tokenizers': TOKENIZERS},
+              'deepseek_v4_tokenizer': {'path': str(tokenizer),
+                  'sha256': DEEPSEEK_TOKENIZER_JSON_SHA256, 'source': DEEPSEEK_TOKENIZER_URL}}
     (home / 'runtime.json').write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     print('Native runtime installed. Set DEEPSEEK_API_KEY, then run python -m sage autonomous --allow-live --output projects/new-run')
 

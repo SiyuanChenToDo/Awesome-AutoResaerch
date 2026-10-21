@@ -17,6 +17,7 @@ import threading
 from datetime import datetime, timezone
 
 from ..artifacts import atomic_json
+from .review import CANDIDATE_SCIENTIFIC_FIELDS
 
 
 ROLES = (
@@ -25,8 +26,80 @@ ROLES = (
     'robustness and transfer',
     'feasibility and reproducibility',
 )
-_SCIENTIFIC_FIELDS = ('problem', 'hypothesis', 'mechanism', 'assumptions',
-                      'closest_prior_art', 'falsification', 'risks', 'source_ids')
+_SCIENTIFIC_FIELDS = tuple(sorted(CANDIDATE_SCIENTIFIC_FIELDS))
+
+# Concept names remain compatible with older proposal documents. When a frozen
+# candidate has the canonical protocol, its measurement fields are authoritative:
+# an author cannot discharge an issue by adding a second, conflicting top-level
+# representation. Keep these aliases narrow; unrelated protocol edits do not count.
+_TARGET_PATH_VERSION = 'sage.team-target-paths.v1'
+_ANALYSIS_PATHS = ('protocol.analysis.method', 'protocol.analysis.uncertainty_method',
+                   'protocol.analysis.confidence_level', 'protocol.analysis.unit_of_analysis')
+_RESOURCE_PATHS = ('protocol.resources.compute_budget', 'protocol.resources.estimate_basis',
+                   'protocol.resources.stopping_rule')
+_PROTOCOL_TARGET_ALIASES = {
+    'sample_size': ('protocol.analysis.sample_size',),
+    'power_analysis': ('protocol.analysis.power',),
+    'power_derivation': ('protocol.analysis.power',),
+    'statistics': _ANALYSIS_PATHS,
+    'statistical_analysis': _ANALYSIS_PATHS,
+    'analysis_plan': _ANALYSIS_PATHS + ('protocol.analysis.controls',),
+    'estimand': ('protocol.endpoints[*].definition', 'protocol.endpoints[*].variable_ids'),
+    'estimands': ('protocol.endpoints[*].definition', 'protocol.endpoints[*].variable_ids'),
+    'metrics': ('protocol.endpoints[*].metric', 'protocol.endpoints[*].unit',
+                'protocol.endpoints[*].direction'),
+    'controls': ('protocol.analysis.controls',),
+    'baselines': ('protocol.analysis.controls',),
+    'budget': ('protocol.resources.compute_budget',),
+    'compute_budget': ('protocol.resources.compute_budget',),
+    'resources': _RESOURCE_PATHS,
+    'resource_requirements': _RESOURCE_PATHS,
+    'feasibility': _RESOURCE_PATHS,
+    'stopping_rule': ('protocol.resources.stopping_rule',),
+    'stopping_rules': ('protocol.resources.stopping_rule',),
+    'definitions': ('protocol.variables',),
+    'notation': ('protocol.variables',),
+}
+_PROTOCOL_TARGET_PATHS = frozenset({
+    'protocol.variables', 'protocol.hypothesis', 'protocol.hypothesis.contrast',
+    'protocol.hypothesis.expected_direction', 'protocol.hypothesis.variable_ids',
+    'protocol.endpoints', 'protocol.primary_endpoint_ids', 'protocol.decision_rule',
+    'protocol.analysis', 'protocol.analysis.sample_size', 'protocol.analysis.controls',
+    'protocol.analysis.power', 'protocol.analysis.power.status',
+    'protocol.analysis.power.assumptions', 'protocol.resources', 'protocol.resources.status',
+    *('protocol.endpoints[*].' + key for key in
+      ('definition', 'metric', 'unit', 'direction', 'variable_ids', 'role')),
+    *_ANALYSIS_PATHS, *_RESOURCE_PATHS,
+    *('protocol.decision_rule.' + key for key in
+      ('type', 'endpoint_ids', 'combination', 'multiplicity', 'support_when',
+       'refute_when', 'inconclusive_when', 'low_power_action', 'margin')),
+})
+
+
+def _resolve_target_paths(candidate, fields):
+    """Resolve against the frozen candidate, never the proposed repair."""
+    canonical = isinstance(candidate.get('protocol'), dict)
+    return {field: list(_PROTOCOL_TARGET_ALIASES[field])
+            if canonical and field in _PROTOCOL_TARGET_ALIASES else [field]
+            for field in fields}
+
+
+def _path_value(candidate, path):
+    if path.startswith('protocol.endpoints[*].'):
+        endpoints = _path_value(candidate, 'protocol.endpoints')
+        if not endpoints['present'] or not isinstance(endpoints.get('value'), list):
+            return {'present': False}
+        leaf = path.rsplit('.', 1)[1]
+        # Endpoint identity, rather than list order, binds these leaf changes.
+        values = [{'id': item.get('id'), 'field': _path_value(item, leaf)}
+                  for item in endpoints['value'] if isinstance(item, dict)]
+        return {'present': True, 'value': sorted(values, key=_canonical)}
+    value = candidate
+    for key in path.split('.'):
+        if not isinstance(value, dict) or key not in value:
+            return {'present': False}
+        value = value[key]
+    return {'present': True, 'value': value}
 
 
 def _canonical(value):
@@ -294,6 +367,7 @@ class TeamBoard:
             existing = {issue['id'] for record in self.state['rounds'].values()
                         for review in record['reviews'].values() for issue in review['issues']}
             seen = set()
+            resolved_targets = {}
             for issue in issues:
                 if not isinstance(issue, dict):
                     raise ValueError('Each peer issue must be an object')
@@ -307,11 +381,20 @@ class TeamBoard:
                     raise ValueError('Issue kind must be factual or methodological')
                 _text(issue.get('problem'), 'Issue problem')
                 _text(issue.get('repair'), 'Issue repair')
+                fields = issue.get('target_fields')
+                if (not isinstance(fields, list) or not fields or
+                    any(not isinstance(f, str) or
+                        (f not in _SCIENTIFIC_FIELDS and f not in _PROTOCOL_TARGET_PATHS) for f in fields) or
+                    len(set(fields)) != len(fields)):
+                    raise ValueError('Issue target_fields must name distinct scientific fields to repair')
+                resolved_targets[ident] = _resolve_target_paths(candidates[issue['candidate_id']], fields)
                 _sources(issue.get('source_ids'))
                 if issue['kind'] == 'factual' and not issue['source_ids']:
                     raise ValueError('Factual criticisms require retrieved source IDs')
             receipt = self._receipt('review', slot, payload, round=number,
-                                    target_slot=target_slot, proposal_sha256=proposal_sha)
+                                    target_slot=target_slot, proposal_sha256=proposal_sha,
+                                    target_path_version=_TARGET_PATH_VERSION,
+                                    resolved_target_paths=resolved_targets)
             current['reviews'][key] = {**copy.deepcopy(payload), 'receipt': receipt}
             self._save()
             return copy.deepcopy(receipt)
@@ -345,9 +428,13 @@ class TeamBoard:
                 raise ValueError('Preserve each candidate ID through revisions; retain rejected candidates explicitly')
             incoming = {issue['id']: issue for review in current['reviews'].values()
                         if review['target_slot'] == slot for issue in review['issues']}
+            bindings = {issue['id']: review['receipt'].get('resolved_target_paths', {}).get(issue['id'])
+                        for review in current['reviews'].values() if review['target_slot'] == slot
+                        for issue in review['issues']}
             if not isinstance(decisions, list):
                 raise ValueError('decisions must be a list')
             seen = set()
+            issue_changes = {}
             for decision in decisions:
                 if not isinstance(decision, dict):
                     raise ValueError('Each decision must be an object')
@@ -369,9 +456,34 @@ class TeamBoard:
                     new = _scientific_content(new_candidates[candidate])
                     if _canonical(old) == _canonical(new):
                         raise ValueError('Accepting an issue requires an actual change to its corresponding candidate')
+                    targets = incoming[ident].get('target_fields', [])
+                    paths = _resolve_target_paths(before[candidate], targets)
+                    # Legacy frozen reviews have no binding receipt. Resolve
+                    # those against their original proposal using the same rule.
+                    if bindings[ident] is not None and bindings[ident] != paths:
+                        raise ValueError('Frozen review target paths disagree with the original candidate')
+                    if (isinstance(old.get('protocol'), dict) and
+                            not isinstance(new.get('protocol'), dict)):
+                        raise ValueError('A revision must preserve the canonical protocol')
+                    changed_paths = sorted({path for values in paths.values() for path in values
+                                            if _canonical(_path_value(old, path)) !=
+                                               _canonical(_path_value(new, path))})
+                    changed = [field for field in targets
+                               if any(path in changed_paths for path in paths[field])]
+                    newly_rejected = 'rejection' not in old and 'rejection' in new
+                    if not changed and not newly_rejected:
+                        raise ValueError('Accepting an issue requires changing its targeted fields; '
+                                         'an unrelated risk/source edit cannot discharge the issue')
+                    issue_changes[ident] = {'changed_target_fields': changed,
+                                           'resolved_target_paths': paths,
+                                           'changed_canonical_paths': changed_paths,
+                                           'candidate_rejected': bool(newly_rejected),
+                                           'scientific_resolution': 'not_verified'}
             if seen != set(incoming):
                 raise ValueError('Every incoming issue must be addressed exactly once')
-            receipt = self._receipt('revise', slot, payload, round=number, primary_sha256=primary_sha)
+            receipt = self._receipt('revise', slot, payload, round=number, primary_sha256=primary_sha,
+                                    issue_changes=issue_changes, target_path_version=_TARGET_PATH_VERSION,
+                                    scientific_resolution='not_verified')
             current['revisions'][key] = {**copy.deepcopy(payload), 'receipt': receipt}
             self._save()
             return copy.deepcopy(receipt)

@@ -13,9 +13,18 @@ from unittest import mock
 
 from sage.autonomous import dsh_runtime
 from sage.autonomous.dsh_runtime import (
+    RESTART_ESCAPE_FAILURES,
+    RESTART_LEDGER_HISTORY_LIMIT,
+    FRESH_SESSION_LIMIT,
+    ResumableDeepSeekRuntime,
+    fresh_restart_ledger,
+    load_restart_ledger,
     native_argv,
+    plan_restart,
     private_state_root,
     public_event,
+    restart_ledger_path,
+    save_restart_ledger,
     save_session,
     saved_session,
     session_from_log,
@@ -288,6 +297,192 @@ class PrivateSessionPointerTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.state_root.stat().st_mode), 0o700)
         path = state_path(self.worktree, self.state_root)
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+
+class RestartLedgerTests(unittest.TestCase):
+    """Restart ledger: escape to a fresh session, terminal policy, overflow class."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name)
+        self.worktree = self.base / 'agent-worktree'
+        self.worktree.mkdir()
+        self.state_root = self.base / 'manager-private'
+        self.agent = 'captain-nemo'
+
+    def scope(self, log_dir, err_path, offset=0):
+        return {'agent_id': self.agent, 'worktree': self.worktree,
+                'state_root': self.state_root, 'ledger_path': restart_ledger_path(self.state_root, self.agent),
+                'log_dir': log_dir, 'err_path': err_path, 'err_offset': offset}
+
+    def write_log(self, log_dir, name='exit-log', events=()):
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / f'{self.agent}.{name}.log'
+        lines = [json.dumps(event) for event in events]
+        path.write_text('\n'.join(lines) + ('\n' if lines else ''), encoding='utf-8')
+        return path
+
+    def failing_ledger(self, failures, fresh=0, session=SESSION_A):
+        save_session(self.worktree, self.agent, session, state_root=self.state_root)
+        ledger = fresh_restart_ledger(self.worktree, self.agent)
+        ledger['current_session_id'] = session
+        ledger['consecutive_failures'] = failures
+        ledger['fresh_session_count'] = fresh
+        ledger['history'] = [{'event': 'exit', 'recorded_at': f'2026-10-19T00:00:0{i}',
+                              'classification': 'no_result', 'exit_code': 1, 'session_id': session}
+                             for i in range(failures)]
+        save_restart_ledger(self.worktree, self.agent, state_root=self.state_root, ledger=ledger)
+        return ledger
+
+    def test_three_consecutive_no_result_escape_to_a_fresh_session(self):
+        self.failing_ledger(RESTART_ESCAPE_FAILURES)
+        plan = plan_restart(self.worktree, self.agent, self.state_root,
+                            resume_session_id=SESSION_A, prompt_source='restart', slot=0)
+        self.assertTrue(plan['fresh_reset'])
+        self.assertIsNone(plan['resume_session_id'])
+        self.assertEqual(plan['archived_session_id'], SESSION_A)
+        # The private pointer is deleted: the broken session cannot be resumed again.
+        self.assertFalse(state_path(self.worktree, self.state_root).exists())
+        # The ledger archived the old session id and reset the failure run.
+        ledger = load_restart_ledger(self.worktree, self.agent, state_root=self.state_root)
+        self.assertEqual(ledger['fresh_session_count'], 1)
+        self.assertEqual(ledger['consecutive_failures'], 0)
+        self.assertTrue(any(entry.get('event') == 'session_archived'
+                            and entry.get('archived_session_id') == SESSION_A
+                            for entry in ledger['history']))
+        # The escape leaves a manager-private receipt.
+        receipt = json.loads((self.state_root / (self.agent + '.restart-escape.json')).read_text())
+        self.assertEqual(receipt['archived_session_id'], SESSION_A)
+        self.assertEqual(receipt['fresh_session_count'], 1)
+        # A fresh start carries no --session-id on the native argv, and the
+        # refused-continuation guard is bypassed inside the escape plan itself
+        # (fresh_reset with no pointer and prompt_source='restart').
+        argv = native_argv('/opt/native/dsh', prompt='Continue',
+                           resume_session_id=plan['resume_session_id'])
+        self.assertNotIn('--session-id', argv)
+
+    def test_escape_without_a_requested_resume_id_never_resurrects_the_session(self):
+        # CORAL skips session extraction when the log has a session-not-found
+        # error and calls start() with resume_session_id=None; the stale pointer
+        # must not resurface the condemned session either.
+        self.failing_ledger(RESTART_ESCAPE_FAILURES)
+        plan = plan_restart(self.worktree, self.agent, self.state_root,
+                            resume_session_id=None, prompt_source='restart')
+        self.assertTrue(plan['fresh_reset'])
+        self.assertIsNone(plan['resume_session_id'])
+        argv = native_argv('/opt/native/dsh', prompt='x', resume_session_id=plan['resume_session_id'])
+        self.assertNotIn('--session-id', argv)
+
+    def test_below_threshold_still_resumes_the_recorded_session(self):
+        self.failing_ledger(RESTART_ESCAPE_FAILURES - 1)
+        plan = plan_restart(self.worktree, self.agent, self.state_root,
+                            resume_session_id=SESSION_A, prompt_source='restart')
+        self.assertFalse(plan['fresh_reset'])
+        self.assertEqual(plan['resume_session_id'], SESSION_A)
+        self.assertTrue(state_path(self.worktree, self.state_root).exists())
+
+    def test_context_overflow_marker_in_stderr_gets_its_own_class_and_counts(self):
+        log_dir = self.base / 'logs'
+        err_path = self.base / 'agent.err'
+        err_path.write_text('ok so far\n', encoding='utf-8')
+        runtime = ResumableDeepSeekRuntime()
+        runtime._restart_scope = self.scope(log_dir, err_path, offset=len('ok so far\n'))
+        marker = ('provider error: maximum context length is 1048576 tokens, '
+                  'requested 1160000 (CONTEXT_WINDOW_EXCEEDED)\n')
+        err_path.write_text('ok so far\n' + marker, encoding='utf-8')
+        path = self.write_log(log_dir, events=[{'type': 'sage_runtime_error',
+                                                'error': 'native session protocol failed'}])
+        self.assertEqual(runtime.classify_exit(path, 1, 30.0), 'session_context_overflow')
+        ledger = load_restart_ledger(self.worktree, self.agent, state_root=self.state_root)
+        self.assertEqual(ledger['consecutive_failures'], 1)
+        self.assertEqual(ledger['current_session_id'], None)
+        self.assertEqual(ledger['history'][-1]['classification'], 'session_context_overflow')
+
+    def test_stale_overflow_bytes_before_the_launch_offset_do_not_classify(self):
+        log_dir = self.base / 'logs'
+        err_path = self.base / 'agent.err'
+        # A previous launch already wrote the marker; this launch starts after it.
+        stale = 'maximum context length is 1048576\n'
+        err_path.write_text(stale, encoding='utf-8')
+        runtime = ResumableDeepSeekRuntime()
+        runtime._restart_scope = self.scope(log_dir, err_path, offset=len(stale))
+        path = self.write_log(log_dir, events=[{'type': 'sage_runtime_error'}])
+        self.assertEqual(runtime.classify_exit(path, 1, 30.0), 'session_error')
+        ledger = load_restart_ledger(self.worktree, self.agent, state_root=self.state_root)
+        self.assertEqual(ledger['history'][-1]['classification'], 'session_error')
+
+    def test_clean_exit_resets_consecutive_failures_and_keeps_fresh_count(self):
+        self.failing_ledger(RESTART_ESCAPE_FAILURES - 1, fresh=1)
+        log_dir = self.base / 'logs'
+        err_path = self.base / 'agent.err'
+        err_path.write_text('', encoding='utf-8')
+        runtime = ResumableDeepSeekRuntime()
+        runtime._restart_scope = self.scope(log_dir, err_path)
+        path = self.write_log(log_dir, events=[{'type': 'session', 'sessionId': SESSION_A,
+                                                'cwd': str(self.worktree)},
+                                               {'type': 'final', 'text': 'done'}])
+        self.assertEqual(runtime.classify_exit(path, 0, 120.0), 'clean')
+        ledger = load_restart_ledger(self.worktree, self.agent, state_root=self.state_root)
+        self.assertEqual(ledger['consecutive_failures'], 0)
+        self.assertEqual(ledger['fresh_session_count'], 1)
+        self.assertEqual(ledger['current_session_id'], SESSION_A)
+
+    def test_two_fresh_sessions_still_failing_raise_the_terminal_error(self):
+        self.failing_ledger(RESTART_ESCAPE_FAILURES, fresh=FRESH_SESSION_LIMIT)
+        with self.assertRaises(RuntimeError) as caught:
+            plan_restart(self.worktree, self.agent, self.state_root,
+                         resume_session_id=SESSION_A, prompt_source='restart', slot=2)
+        message = str(caught.exception)
+        self.assertIn(self.agent, message)
+        self.assertIn('slot 2', message)
+        self.assertIn(str(restart_ledger_path(self.state_root, self.agent)), message)
+        self.assertIn('no_result', message)
+        # The recorded session and pointer stay untouched as evidence.
+        self.assertEqual(saved_session(self.worktree, self.agent, state_root=self.state_root), SESSION_A)
+
+    def test_corrupt_ledger_json_recovers_as_an_empty_ledger(self):
+        save_session(self.worktree, self.agent, SESSION_A, state_root=self.state_root)
+        restart_ledger_path(self.state_root, self.agent).write_text('{not-json', encoding='utf-8')
+        ledger = load_restart_ledger(self.worktree, self.agent, state_root=self.state_root)
+        self.assertEqual(ledger['consecutive_failures'], 0)
+        self.assertEqual(ledger['history'], [])
+        plan = plan_restart(self.worktree, self.agent, self.state_root,
+                            resume_session_id=SESSION_A, prompt_source='restart')
+        self.assertEqual(plan['resume_session_id'], SESSION_A)
+
+    def test_foreign_ledger_for_another_agent_or_worktree_is_not_trusted(self):
+        other = self.base / 'other-worktree'
+        other.mkdir()
+        ledger = fresh_restart_ledger(other, self.agent)
+        ledger['consecutive_failures'] = RESTART_ESCAPE_FAILURES
+        path = restart_ledger_path(self.state_root, self.agent)
+        self.state_root.mkdir(exist_ok=True)
+        if os.name == 'posix':
+            self.state_root.chmod(0o700)
+        path.write_text(json.dumps(ledger), encoding='utf-8')
+        loaded = load_restart_ledger(self.worktree, self.agent, state_root=self.state_root)
+        self.assertEqual(loaded['consecutive_failures'], 0)
+
+    def test_history_is_bounded_to_the_recent_fifty_entries(self):
+        ledger = fresh_restart_ledger(self.worktree, self.agent)
+        ledger['history'] = [{'event': 'exit', 'classification': 'no_result',
+                              'recorded_at': str(index)} for index in range(60)]
+        save_restart_ledger(self.worktree, self.agent, state_root=self.state_root, ledger=ledger)
+        loaded = load_restart_ledger(self.worktree, self.agent, state_root=self.state_root)
+        self.assertEqual(len(loaded['history']), RESTART_LEDGER_HISTORY_LIMIT)
+        self.assertEqual(loaded['history'][-1]['recorded_at'], '59')
+
+    def test_ledger_bookkeeping_failure_never_changes_the_classification(self):
+        log_dir = self.base / 'logs'
+        path = self.write_log(log_dir, events=[{'type': 'sage_runtime_error'}])
+        runtime = ResumableDeepSeekRuntime()
+        runtime._restart_scope = {'agent_id': self.agent, 'worktree': self.worktree,
+                                  'state_root': self.state_root, 'log_dir': log_dir,
+                                  'err_path': self.base / 'missing.err', 'err_offset': 0}
+        with mock.patch('sage.autonomous.dsh_runtime.save_restart_ledger',
+                        side_effect=OSError('disk full')):
+            self.assertEqual(runtime.classify_exit(path, 1, 5.0), 'session_error')
 
 
 class ImportBoundaryTests(unittest.TestCase):

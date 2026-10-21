@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from sage.autonomous.service import candidate_errors, read_primary, ResearchService
 from sage.autonomous.runner import prepare, dsh_endpoint
-from sage.autonomous.skills import REQUIRED_SKILLS, assemble_native_task
+from sage.autonomous.skills import REQUIRED_SKILLS, REQUIRED_REFERENCES, assemble_native_task
 
 
 def candidates():
@@ -82,6 +82,10 @@ class AutonomousTests(unittest.TestCase):
                 skill = root / 'ARIS' / 'skills' / name / 'SKILL.md'
                 skill.parent.mkdir(parents=True)
                 skill.write_text('Original skill: ' + name + '\nLiteral ${shell(example)}', encoding='utf-8')
+            for name in REQUIRED_REFERENCES:
+                reference = root / 'ARIS' / 'skills' / name
+                reference.parent.mkdir(parents=True, exist_ok=True)
+                reference.write_text('Original reference: ' + name, encoding='utf-8')
             config = prepare(root, topic='Topic', aris_root=root / 'ARIS', coral_python=Path('/python'),
                              dsh=Path('/dsh'), agent_user='research')
             self.assertEqual(config['agents']['runtime'], 'sage.autonomous.dsh_runtime:ResumableDeepSeekRuntime')
@@ -98,11 +102,14 @@ class AutonomousTests(unittest.TestCase):
             self.assertFalse(list((root / 'seed').glob('*.pdf')))
             self.assertIn('process.env.SAGE_RESEARCH_TOKEN', (root / 'research.patch.yml').read_text())
             receipt = json.loads((root / 'aris-inputs.json').read_text())
-            self.assertEqual(len(receipt['skills']), 5)
+            self.assertEqual(len(receipt['skills']), 6)
+            self.assertEqual(len(receipt['references']), 1)
             self.assertGreater(receipt['instruction_context_budget_bytes'], 65536)
             self.assertIn('${shell(example)}', (root / 'seed' / 'AGENTS.local.md').read_text())
             for name in REQUIRED_SKILLS:
                 self.assertIn('Original skill: ' + name, (root / 'seed' / 'AGENTS.local.md').read_text())
+            for name in REQUIRED_REFERENCES:
+                self.assertIn('Original reference: ' + name, (root / 'seed' / 'AGENTS.local.md').read_text())
             if __import__('os').name == 'posix':
                 self.assertTrue((root / 'research.patch.yml').stat().st_mode & 0o004)
 

@@ -11,8 +11,20 @@ them as separate research contexts, never independent model families or experts.
 ## Start with the actual team state
 
 Call `mcp__sage_research__team` with `{"action":"status"}` first and after any
-phase transition. Use the returned role, slot, round and required action rather
-than guessing teammate identities or the current round. Your slot comes from the
+phase transition. The default response is compact: your slot, role, the current
+phase/round, `next_action`, proposal/review/revision/synthesis counts, the frozen
+slot list with each frozen proposal's SHA-256, the incoming-issue count, and a
+pointer to the shared all-agent snapshot
+(`snapshot_file`: `.coral/public/team-snapshot.json`, with its
+`snapshot_sha256`). Read that file directly from the native shell when you need
+the full frozen review/revision/synthesis history; do not poll for it over the
+tool transport. Slot-specific full sections are never in the shared file: request
+them inline in one call with `sections`, for example
+`team(action="status", sections=["frozen_proposals"])`,
+`sections=["incoming_issues"]`, `sections=["syntheses"]`,
+`sections=["peer_advice_audits"]`, or pass `detail="full"` for every section.
+Use the returned role, slot, round and required action rather than guessing
+teammate identities or the current round. Your slot comes from the
 runtime, not a field you can supply to a tool. Work independently in your own wiki
 and files; the shared evidence service gives everyone the same authenticated
 paper identities, extraction scopes and source passages.
@@ -30,7 +42,10 @@ idea. Do not assert that a shared card proves you personally read the full paper
 ## Independent proposal, peer challenge and revision
 
 1. Search, read, compare and develop your assigned research perspective. Use
-   `evidence` and targeted `passages` when useful. Write a JSON file in your own
+   `evidence` and targeted `passages` when useful; narrow `evidence` with
+   `paper_ids` (unknown IDs come back under `unknown_paper_ids`) and
+   `include` (a subset of papers/cards/reviews/searches) instead of fetching
+   the whole run each time. Write a JSON file in your own
    worktree with `candidates`, `selected_ids` and `selection_rationale`, following
    the primary candidate schema. Local candidate IDs identify your own proposal;
    final synthesis will preserve their origin explicitly.
@@ -39,20 +54,37 @@ idea. Do not assert that a shared card proves you personally read the full paper
    The manager copies and hashes it. Other initial proposals become visible only
    after all researchers have submitted; do not bypass that barrier by reading
    peer worktrees or their native conversation files.
-3. When status assigns a peer review, read the returned frozen proposal and its
-   exact `proposal_sha256`. Examine methods, novelty, counterexamples, assumptions,
+3. When status assigns a peer review, request the frozen proposal with
+   `team(action="status", sections=["frozen_proposals"])` (compact status also
+   gives `review_target` and `target_primary_sha256`) and bind to its exact
+   `proposal_sha256`. Examine methods, novelty, counterexamples, assumptions,
    evaluation, resource feasibility and reproducibility through your assigned
    perspective. Do real supporting or contradictory retrieval when needed. Submit
    `team(action="review", round=STATUS_ROUND, target_slot=...,
    proposal_sha256="...", issues=[...])`. Pass the exact round from current status;
    an older receipt or delayed request must not be applied to a later round.
    Each issue is `{"id":"...","candidate_id":"...","kind":"factual" or
-   "methodological","problem":"...","repair":"...","source_ids":[...]}`.
+   "methodological","problem":"...","repair":"...","source_ids":[...],
+   "target_fields":["hypothesis","falsification"]}`.
+   Name the scientific fields this issue actually requires changing. An unrelated
+   risk sentence or source addition cannot discharge a control-design objection.
+   Prefer exact protocol paths for measurement issues, for example
+   `protocol.analysis.sample_size`, `protocol.analysis.method`,
+   `protocol.analysis.power`, or `protocol.decision_rule.support_when`.
+   `protocol.endpoints[*].metric` addresses metric definitions by endpoint ID;
+   changing endpoint order or role does not repair that target. Broad targets such
+   as `protocol` should be used only for issues genuinely concerning the whole
+   protocol. With a canonical protocol, conceptual targets such as `sample_size`,
+   `power_analysis`, `controls`, and `compute_budget` bind to their corresponding
+   protocol paths, not top-level duplicates. The review receipt records the exact
+   binding. For legacy candidates without a protocol, top-level targets retain
+   their original meaning; missing scientific fields may be requested explicitly.
    Factual objections must cite actually retrieved papers; methodological concerns
    may be logical objections with explicit reasons rather than invented citations.
    Focus on consequential problems; do not fabricate an objection to fill a quota.
    The tool receipt, rather than your own prose, records what was submitted.
-4. Once all reviews for the round are frozen, read the objections to your proposal.
+4. Once all reviews for the round are frozen, read the objections to your proposal
+   with `team(action="status", sections=["incoming_issues"])`.
    Revise it in your own worktree. Submit
    `team(action="revise", round=STATUS_ROUND,
    artifact_path="/absolute/path/to/revised.json",
@@ -61,43 +93,111 @@ idea. Do not assert that a shared card proves you personally read the full paper
    "reason":"...","source_ids":[...],"change":"..."}`. State the precise
    change for acceptance, evidence or logic for rejection, and remaining missing
    evidence for uncertainty. Rejecting or retaining uncertainty is allowed; silent
-   omission and unsupported agreement are not. Re-search mechanisms and nearest
+   omission and unsupported agreement are not. Judge the problem and the proposed
+   remedy separately: reject an incorrect remedy even when the problem is real,
+   and describe the alternative repair. A changed field is not verified science.
+   Follow the frozen review's resolved paths and inspect the revision receipt's
+   `changed_canonical_paths`. Do not add mirror fields to satisfy a target while
+   leaving its canonical protocol value unchanged.
+   Read the manager's separate peer-advice audit when supplied, alongside the
+   original frozen issue. It assesses problem and remedy independently without
+   scores or your accepted/rejected labels. `unavailable` is an audit gap, and
+   `harmful`, `disputed` or `unknown` are advisory findings requiring your explicit
+   scientific adjudication; none is automatic proof that the original peer was
+   wrong. Preserve both the issue and audit, explain your final decision and
+   verify any new source before treating it as support for the revised claim.
+   During synthesis, also consult the manager's `novelty_feedback` audit: it
+   checks review problems and remedies separately without seeing the scores.
+   Do not count an unverified novelty move as an accepted scientific improvement.
+   Search and read the proposed change's closest work, state a discriminating
+   prediction and falsifier, preserve the old version and obtain a new critique
+   of the exact changed file. Source-location checks do not prove entailment.
+   Re-search mechanisms and nearest
    work after substantive revisions. Preserve rejected candidates and reasons.
 5. Repeat the assigned peer-review/revision cycle for the configured rounds. The
    manager selects the peer and exposes same-round frozen snapshots, so reviews
    cannot silently switch to a moving proposal. Never submit another researcher's
    revision or claim a review was addressed without the matching decision record.
 
-If a barrier is waiting, first use the time for relevant source checks, your own
-notes or additional counterevidence. Otherwise wait 20–30 seconds with native
-shell before checking status again. Do not hammer the service or spend calls
-repeating an unchanged status. Do not exit merely because your current phase is
-waiting; the manager controls the overall time limit and shutdown.
+If you develop a new local hypothesis after freezing an initial proposal, record
+that newer lineage explicitly. Peers still review the displayed frozen version;
+do not claim their later critique caused a change already made before it.
+
+If a barrier is waiting, finish any useful relevant source checks and save your
+notes. Non-coordinator slots may then end the native turn cleanly. The runtime
+supervisor waits without model calls, polls authenticated team status and resumes
+the exact existing session only when your next assigned action becomes available.
+When status says `finished`, save receipts and end the turn; do not keep calling
+status, sleeping in shell or commissioning unassigned critiques. This does not
+complete the manager's run or terminate slot 0. Only the coordinator continues
+the synthesis and formal submission loop; the manager owns shutdown and budgets.
 
 ## Synthesis and formal submission
 
 Only authenticated slot 0 synthesizes and invokes `coral eval`. After the final
 round's revisions are complete, inspect every final frozen proposal and decision
-record. Build the common `conjectures.json` in slot 0's worktree, retaining every
+record via `team(action="status", detail="full")` (or
+`sections=["frozen_proposals","revision_history","syntheses"]`). Build the common
+`conjectures.json` in slot 0's worktree, retaining every
 originating candidate, including rejected ones. Each candidate additionally needs
 `"origin":{"slot":...,"candidate_id":"...","proposal_sha256":"..."}`
 from its final frozen proposal. Use unique final IDs and record selection and
 rejection reasons. Merge or reject redundant claims explicitly while preserving
 their source candidates; do not discard inconvenient proposals or open objections.
 
-Write the Chinese `CONJECTURES.md` and reconcile it with that exact JSON. Preserve
+Call `mcp__sage_research__protocol_schema` and use one canonical structured protocol
+for every selected candidate: reconcile coding, direction, endpoints, thresholds,
+estimand, controls and budget with its scientific fields. Generate the Chinese
+`CONJECTURES.md` using `mcp__sage_research__report(artifact_path=...)` after every
+JSON change. The manager binds the report to the exact JSON; do not reuse an old
+report or manually insert an outdated version/SHA. Register
+the first synthesis BEFORE asking for synthesis advisory reviews. Preserve
 the original workflow's at least two fresh-context advisory critique/revision
 cycles, targeted novelty/counterevidence checks and substantive repairs. Team peer
 reviews supplement these critiques. They are not additional CORAL formal grades.
 Register the current final file with
 `team(action="synthesize", artifact_path="/absolute/path/to/conjectures.json")`.
-This binds synthesis to the exact file SHA and completed team history. Register
+This binds synthesis to the exact file SHA and completed team history. Only
+coordinator advisory reviews made after first synthesis and bound to registered
+synthesis versions count; at least two are required, with one covering the exact
+current file after its last change. Initial researcher critiques and formal grades
+cannot substitute for this stage. Register
 again after any later file change, including advisory or formal review repairs,
 before the next `coral eval -m "..."`. A past synthesis receipt does not authorize
 grading a changed file. The grader also checks provenance and candidate contracts.
 
-Other slots remain available for source checks and notes while slot 0 handles
-the shared report and grading feedback. Do not make competing formal submissions.
+After the first registered synthesis, every changed file must include a
+`revision_record` following `protocol_schema().revision_contract`. Bind its
+`parent_sha256` to the immediately preceding synthesis, enumerate every actually
+changed scientific field and selection, and give scientific reasons for any
+withdrawal while preserving all old candidate IDs in the ledger. Metadata-only
+changes use `no_scientific_change`. A sampled score or JSON convenience is not a
+scientific basis for reverting a method. The manager checks record completeness;
+the record itself is not proof that a change is scientifically sound.
+
+Keep a revision ledger which assesses the scientific problem and proposed remedy
+separately. Preserve valid controls and repairs unless a concrete scientific
+reason defeats them. A lower isolated score, including a lower formal than
+advisory score, does not warrant rollback or withdrawing candidates to escape
+schema requirements. Repeated identical prompts can vary: report observed
+dispersion as uncertainty, not calibrated noise or proof of deterioration. Use
+existing review receipts and bounded remaining attempts, not score-seeking repeats.
+
+The service audits each published peer review in a separate score-blind context.
+Read `peer_advice_audits` via
+`team(action="status", sections=["peer_advice_audits"])` before revising; a
+pending audit means wait rather than resubmit the same revision. Every decision
+must additionally
+contain nonempty `problem_assessment`, `remedy_assessment`, `audit_response`, and
+`remaining_uncertainty`. Assess the criticism separately from its remedy. Refer
+to the audit and explain disagreement or missing evidence; an unavailable audit
+does not establish that the advice is correct. A supported/helpful verdict is
+advisory, not permission to apply a change without checking the original claim.
+
+Other slots save their work and end their turn when status is `finished`; the
+runtime keeps them available without model polling while slot 0 handles the
+shared report and grading feedback. A later legitimate assigned team action can
+resume their original session. Do not make competing formal submissions.
 In your WORKFLOW_TRACE.md cite your own proposal, review and revision receipts,
 actual source work and native slot. Report uncompleted rounds or missing peers as
 incomplete. Do not turn collaboration, source binding or a high model score into

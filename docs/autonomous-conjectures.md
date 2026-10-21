@@ -9,7 +9,7 @@
 | 组件 | 实际接入 | 职责 |
 |---|---|---|
 | CORAL | 原版 `AgentManager`、DeepSeek Harness runtime、grader daemon、独立提交 checkout、attempt、heartbeat | 启动持续代理，保存与评分尝试，反馈后继续探索，按预算停止 |
-| ARIS | 上述五项核心技能的原始完整文件逐字写入 `AGENTS.local.md`，由 DSH 原生工作区指令加载器提供；其他完整技能目录经原生 skill-filesystem 挂载，额外工具加载以原生日志为准 | 调研、8–12 个不同候选、近似工作比较、批评、修订及 Research Wiki |
+| ARIS | 六项核心技能及 `taste-calibration.md` 原文逐字写入 `AGENTS.local.md`，包含此前漏保的 `research-refine`；其他技能经原生 skill-filesystem 挂载，额外加载以日志为准 | 调研、8–12 个不同候选、查新、七维提案评阅、修订及 Research Wiki |
 | SAGE / CoI 改造部分 | 真实检索、官方可用 arXiv 正文读取、跨章节证据卡、原文段落 ID 绑定、按需补读、来源范围和失败记录 | 给代理提供可追溯研究证据，避免只读摘要或把全文无差别塞入提示词 |
 | DeepSeek Harness | 官方 `@deepseek-ai/dsh` headless 运行时 | 使用模型 API 驱动技能、文件、shell 和研究 MCP 工具 |
 
@@ -17,11 +17,19 @@ ARIS 和 CORAL 源码固定为 `15c0b799e6cd5fbc4da381a5786dd0bc2cdf15ee`、`012
 
 ## 一次安装，以后只需 API
 
+原生评分现采用ARIS七维原权重，程序汇总、无参考锚明确标注 `calibration:none`；历史分数隔离、综合评阅门控及最新稿导出见[修复说明](scientific-review-repair.md)。[原版四项目量表](upstream-review-rubrics.md)区分实际重用和SAGE新增设计。
+
+每次评阅有数值评分、随后不读取分数的主张级新颖性/建议审查两个阶段，使用相同科学输入和证据快照。`novelty_feedback` 分开判断问题与修复，保存原文定位、比较范围和待验证改进；新建议没有自动执行或证明新颖。2026-10-19 起，每阶段默认允许一次有记录的格式修复，因此正常为两个模型请求，最多四个；只重做失败阶段，已合法的数值评级冻结。修复额外消耗工具预算，传输异常不会伪装成 JSON 修复。每次调用分别记录模型身份、用量和失败；第二步失败保留第一阶段结果，但不产生完整成功收据。见[新颖性裁判与提示词](novelty-judge.md)和[可靠性修复](autonomous-reliability.md)。
+
 目前原生宿主适配器面向 Linux x86_64 / Python 3.12+。Windows 用户可在 AutoDL 上运行。首次安装需要 root 创建 CORAL 的非 root 代理账户；会安装固定版本 Node、pnpm、DSH、CORAL、ARIS 和 Python 依赖：
 
 ```bash
 python scripts/setup_autonomous.py
 ```
+
+安装器同时安装 `tokenizers==0.22.2`，从官方 V4 分词器包中仅缓存校验过 SHA 的 `tokenizer.json`，不执行包内 Python 代码。默认缓存为 `~/.cache/sage/tokenizers/deepseek-v4/tokenizer.json`，用户只需按下文配置模型 API。已有安装升级后也需补齐这项依赖与缓存；缺失、损坏或无法核验时会明确报错。
+
+官方 `deepseek-flash` 的阅读与评审请求按输入 token、请求输出及 4096 token 的封装预留检查 1,048,576 token 容量；大型提示词不再按“100 万字符”拒绝。另有 8 MiB 的 UTF-8 请求资源保护。自定义网关及未知模型不自动继承官方容量声明。该离线检查保留原始输入，不裁剪卡片、原文或未知状态，也不代表服务端实测用量。参见[官方模型元数据](https://api-docs.deepseek.com/api/list-models/)与[分词器说明](https://api-docs.deepseek.com/quick_start/token_usage/)。
 
 将密钥设置在环境变量 `DEEPSEEK_API_KEY` 或 `SAGE_OPENAI_API_KEY` 中。不要把密钥写入 Git、研究提示词、公开配置或启动参数。之后运行：
 
@@ -41,28 +49,28 @@ python -m sage autonomous --allow-live \
 
 DSH 固定为一致发行的 `0.2.0-rc.2`。其 Messages 接口使用 `https://api.deepseek.com/anthropic`，SAGE 阅读/批评器的 Chat Completions 使用 `https://api.deepseek.com`，不能混用。自有 Messages 网关使用 `SAGE_DSH_BASE_URL` 单独配置，参见 [DeepSeek 官方接口说明](https://api-docs.deepseek.com/guides/anthropic_api/)。
 
-默认四位独立会话的研究者、两轮互评，由团队产生总计 8–12 个候选，再由 slot 0 综合、批评修订并提交 CORAL。每位研究者有自己的工作区和候选历史；同家族 API 的多个上下文不能称为独立模型专家。初稿全部齐备后才开放同伴稿，每轮互评齐备后才修订，最终稿保留每个候选的来源和逐条处理意见，见[团队协议与验收要求](native-team-protocol.md)。这补齐了此前原生主线未接入团队讨论的问题；此前 run-10 仍是单主研究者的历史结果，不能用新的配置追溯改变。
+默认四位独立会话的研究者、两轮互评，以总计 8–12 个候选为提示词目标，再由 slot 0 综合、批评修订并提交 CORAL。程序约束每人至少 `ceil(8/N)` 个并保留全部候选，没有 12 个的硬上限。每位研究者有自己的工作区和候选历史；同家族 API 的多个上下文不能称为独立模型专家。初稿全部齐备后才开放同伴稿，每轮互评及其建议审计齐备后才修订，最终稿保留每个候选的来源和逐条处理意见，见[团队协议与验收要求](native-team-protocol.md)。这补齐了此前原生主线未接入团队讨论的问题；此前 run-10 仍是单主研究者的历史结果，不能用新的配置追溯改变。
 
 可通过 `--researchers 1` 使用单研究者流程，或设置 `--researchers 2/3/4` 和 `--discussion-rounds 1/2/3`。多研究者只用 slot 0 执行 `coral eval`，其他研究者通过团队工具交换冻结提案、批评和修订。
 
-默认 4 次 CORAL 正式提交、2 小时总时限；研究工具共享额度默认为 `160 × 研究者数`，默认四人为 640 次、单人为 160 次。显式 `--max-tools` 始终表示团队总额度，不再乘人数。本轮四人运行实际用了 205 次工具调用，原先单人额度不能直接作为四人的默认额度。可以调整 `--max-attempts`、`--max-tools`、`--wall-seconds`；它们用于约束运行，不是科研内容或每节篇幅的压缩规则。各研究者的原生 DSH 调用和重试另有自己的记录，研究工具次数不能当作总 API 调用数或费用上限。
+默认 4 次 CORAL 正式提交、2 小时总时限；研究工具共享额度默认为 `160 × 研究者数`，默认四人为 640 次、单人为 160 次。显式 `--max-tools` 始终表示团队总额度，不再乘人数。2026-10-18 早期四人团队验证实际用了 205 次工具调用，原先单人额度不能直接作为四人的默认额度；这不是以后运行的固定用量。可以调整 `--max-attempts`、`--max-tools`、`--wall-seconds`；它们用于约束运行，不是科研内容或每节篇幅的压缩规则。正式提交的 JSON、契约、模型评阅失败也消耗尝试额度；失败零值是 CORAL 操作哨兵，`scientific_score=null`，不能解释为科研评分为零。各研究者的原生 DSH 调用和重试另有自己的记录，研究工具次数不能当作总 API 调用数或费用上限。
 
 安装记录在 `$SAGE_NATIVE_HOME/runtime.json`，默认 `~/.cache/sage/native/runtime.json`。已有环境可显式指定 `--coral-python`、`--aris-root`、`--dsh`。研究主进程也需能导入 openai、pypdf；可使用安装目录 `python/bin/python` 运行本仓库。部署脚本采用 pnpm，避免观察到的 npm 对 DSH 预发布依赖循环解析问题。
 
 ## 看哪些输出
 
 - `launch.json`：启动时框架文件哈希、上游版本、方向，明确是否预置论文和猜想。
-- `aris-inputs.json`：提供给原生 DSH 的五项原始技能、完整文件哈希与指令文件哈希。挂载目录或代理自述不算已读取证明。DSH 的默认 64 KiB 指令预算不足以容纳这些全文，入口自动扩展预算以保留正文和随后的当前任务；输入交付也不等于方法执行正确。技能文件直接通过原生指令加载器读取，避免原文 shell 示例被 CORAL 的配置插值器当成变量解析。
+- `aris-inputs.json`：提供给原生 DSH 的六项原始技能（`research-lit`、`idea-creator`、`novelty-check`、`research-review`、`research-refine`、`research-refine-pipeline`）、`taste-calibration.md` 参考文件、完整文件哈希与指令文件哈希。挂载目录或代理自述不算已读取证明。DSH 的默认 64 KiB 指令预算不足以容纳这些全文，入口自动扩展预算以保留正文和随后的当前任务；输入交付也不等于方法执行正确。技能文件直接通过原生指令加载器读取，避免原文 shell 示例被 CORAL 的配置插值器当成变量解析。
 - `manager.log` 与 `native-run/.coral/public/logs/`：原生管理器和代理日志。
 - `native-run/agents/<实际代理名>/`：每位研究者自己的 Research Wiki、`WORKFLOW_TRACE.md`、提案和修订文件；slot 0 还保存综合的 `conjectures.json`、中文 `CONJECTURES.md`。实际代理名称由 CORAL 保存。
 - `native-run/.coral/public/attempts/`：各次提交、评分和失败原因；所有尝试保留。
-- `service-private/evidence.json`、`events.jsonl`：管理器拥有的原始检索、阅读范围、证据卡、请求与评审收据。代理不能改写该目录。
+- `service-private/evidence.json`、`events.jsonl`：管理器拥有的原始检索、阅读范围、证据卡、请求与评审收据，包括同伴建议审计和正式尝试计数。`review-progress-*` 与 `review-failure-*` 保留阶段进度及失败，不能当成完整评阅。代理不能改写该目录。
 - `result.json`：工程完成状态、实际检索/阅读/批评数量、`research_team` 团队过程汇总、框架运行中是否变化及独立验收状态。
 - 顶层 `conjectures.json`、`CONJECTURES.md`：从已评分的冻结提交保留副本中直接导出的猜想与中文报告；`selected_grade` 记录对应提交和文件哈希。没有符合来源契约的提交时，不冒充成功产物。
 
 证据卡提炼最多读取分布在文档中的 12 个片段，覆盖方法、实验、限制等部分。新版让模型选择原文段落 ID，由程序回填未经改写的原文和位置，避免模型重打公式或标点导致有效信息整批丢失。每条来源绑定单独校验，非法主张被拒绝并记录，其他有效主张保留；不能用来源 ID 绑定冒充语义蕴含证明。
 
-每篇保留最多 40 条原子提炼及所需原文依据，传输容量为 60,000 字符，保留未读范围和被拒绝项。完整的已提取文本保存在管理器私有原文快照中；代理可用 `passages` 先查看章节索引，再按需补读至多四个原始片段。正文不可用时保留 abstract_only/metadata_only；不得补写原文没有提供的细节。
+原生入口每篇保留最多 40 条原子提炼及所需原文依据，当前证据卡容量为 240,000 字符，容纳逐条语义支持审计、未读范围和被拒绝项。模块化 `sage run --profile research` 也使用同一语义审计和容量，默认至多八个片段、18 条提炼；显式旧 `evidence_mode: capsule` 保持未审计 v1 兼容默认，见[研究输入说明](ideation-evidence.md)。只有被审计为 supported 的提炼进入可用主张和摘要，unsupported/uncertain 及其依据仍保留；同家族语义审计不构成独立科学验证。提供给代理的视图只移除重复审计账本，不把未支持内容隐藏成已支持。完整的已提取文本保存在管理器私有原文快照中；代理可用 `passages` 先查看章节索引，再按需补读至多四个原始片段。正文不可用时保留 abstract_only/metadata_only；不得补写原文没有提供的细节。
 
 每次批评在调用模型前保存原始猜想文件、实际证据包和请求，后续修改不覆盖先前版本。批评明确检查变量定义、方向/单调性、条件和已有理论，并区分历史淘汰候选与当前选中候选。
 

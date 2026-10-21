@@ -90,6 +90,18 @@ class FixtureModel:
                     'overlap':'Synthetic context.','delta':'Unverified proposal.',
                     'evidence_limit':'Fixture is not scientific evidence.','decisive_test':'Run the fixed synthetic comparison.'}
                     for d in dossier]}) + '</assessment>'
+        if stage == 'literature.span_capsule':
+            passages = json.loads(prompt.split('INPUT_PASSAGES: ', 1)[1])
+            return '<capsule>' + json.dumps({'claims': [{'category': 'method',
+                'claim': 'Synthetic fixture source text, not empirical evidence.',
+                'span_ids': [passages[0]['span_id']]}], 'inferences': []}) + '</capsule>'
+        if stage == 'literature.entailment':
+            batch = json.loads(prompt.split('INPUT_CLAIMS_AND_ORIGINAL_PASSAGES: ', 1)[1])
+            return '<entailment>' + json.dumps({'claims': [{
+                'claim_id': item['claim_id'], 'verdict': 'supported',
+                'source_span_ids': list(item['source_spans']),
+                'reason': 'Deterministic fixture only, not a scientific semantic judgment.',
+                'unsupported_details': []} for item in batch]}) + '</entailment>'
         if stage == 'literature.capsule':
             chunk = json.loads(prompt.split('INPUT_CHUNK: ', 1)[1])
             value = {'claims': [{'category': 'method', 'claim': 'Synthetic fixture text, not empirical evidence.',
