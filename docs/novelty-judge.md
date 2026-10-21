@@ -13,6 +13,8 @@
 
 2026-10-18 第一版每阶段一次请求；2026-10-19 的[可靠性修复](autonomous-reliability.md)增加显式、留痕的阶段内格式修复。当前默认每阶段最多一次修复，因此正常两个请求、上限四个；嵌入式配置 `review_repair_attempts` 支持 0–2，上限公式为 `2 × (1 + review_repair_attempts)`。合法数值评级冻结，只重做失败阶段；额外请求消耗预算，失败不静默重开整轮。实际调用模型、各阶段用量、请求、原始失败回复及输入/证据哈希分别保存。新请求仍使用已配置的 API；同一模型的新上下文不是独立模型家族。第二步失败不能留下完整评阅成功收据，第一步原始输出和部分结果仍保留。2026-10-20 起，校验失败除原一句话文案外还回显 ID 级结构化 detail（非法引用/ID 列表与该候选允许子表，不含论文原文），随修复后缀和失败收据一并给模型与调用方；detail 只作参考数据、按不可信 DATA 对待，各校验门仍全量重验、强度不变。
 
+2026-10-21 起评审 prompt 采用投影瘦身（模型侧紧凑视图、宿主侧全量保留）。第一阶段 `RETRIEVED EVIDENCE` 不再原样序列化整个 evidence store，改为确定性紧凑证据视图 `evidence_view`：按 paper 给出 title、abstract（≤800 字符，超出截断加省略标记）、claims 按类别分组（九个主类别 problem/motivation/method/assumptions/metrics/results/limitations/reproducibility/future_work；capsule 额外的 data/baselines 两类保留独立分组而非丢弃；每类 ≤6 条、每条 ≤300 字符）、未验证 inferences、阅读范围摘要与 targeted passage 块 ID 清单；span 只以 ID 出现在 claims 的 source_span_ids，原文永不进 prompt；searches 一行式 `{query, purpose, 结果数}`。体积目标：该段 ≤400KB（构造证据 fixture 的回归测试断言，实测 fixture 全量 706KB → 视图约 23KB）。第二阶段 `AUTHENTICATED REFERENCE CATALOG` 索引化：只对每个候选 `closest_prior_art` 指向的最近 1–2 篇 source 保留 span 原文全文（句级比对与引用需要），其余 in-scope source 只给 claims 紧凑摘要 + reference ID 清单；候选没有任何 closest_prior_art 时全部 source 走摘要模式。`ALLOWED REFERENCE IDS BY CANDIDATE` 表照旧全量，宿主侧 `_reference_catalog(evidence)` 不变（仍全量）。门的强度论证：两段校验（`validate_review`/`validate_feedback`）零改动、错误文案不变；校验所需的 scope、全量 catalog 与原文都在宿主侧冻结证据里，引用由程序查表并复制原文（`manager_source_lookup_not_entailment`），模型看不看得到 span 原文不影响任何门的判定——对模型从未以原文形式看到的 source 引用 reference ID，宿主照样解析通过（回归测试 `test_host_gate_resolves_references_hidden_from_the_model_view` 断言）。投影全部确定性实现、不调模型；宿主 evidence store、catalog 构建与请求留痕（`evidence_sha256` 等）不变。
+
 ### 主张与证据
 
 每个入选候选至少拆出一条方法、发现或评价主张。每条记录最近来源、重合部分、实质差异、证据限制，并给出以下判断之一：

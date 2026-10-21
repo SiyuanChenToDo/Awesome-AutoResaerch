@@ -35,6 +35,7 @@ _OPTIONS = {'command', 'profile', 'patch', 'provider', 'permission_mode',
 
 RESTART_LEDGER_SCHEMA = 'sage.native_restart_ledger.v1'
 RESTART_ESCAPE_RECEIPT_SCHEMA = 'sage.native_restart_escape.v1'
+SESSION_ROTATION_RECEIPT_SCHEMA = 'sage.native_session_rotation.v1'
 RESTART_LEDGER_HISTORY_LIMIT = 50
 # Consecutive unproductive restarts (no_result / session_error /
 # session_context_overflow) before the ledger archives the recorded session
@@ -204,6 +205,7 @@ def fresh_restart_ledger(worktree_path, agent_id):
     return {'schema_version': RESTART_LEDGER_SCHEMA, 'agent_id': agent_id,
             'cwd': str(Path(worktree_path).resolve()), 'current_session_id': None,
             'consecutive_failures': 0, 'fresh_session_count': 0,
+            'rotated_session_count': 0,
             'history': [], 'updated_at': None}
 
 
@@ -226,7 +228,7 @@ def load_restart_ledger(worktree_path, agent_id, *, state_root):
         ledger['history'] = []
     ledger['history'] = [entry for entry in ledger['history']
                          if isinstance(entry, dict)][-RESTART_LEDGER_HISTORY_LIMIT:]
-    for key in ('consecutive_failures', 'fresh_session_count'):
+    for key in ('consecutive_failures', 'fresh_session_count', 'rotated_session_count'):
         if type(ledger[key]) is not int or ledger[key] < 0:
             ledger[key] = 0
     if ledger['current_session_id'] is not None:
@@ -245,6 +247,14 @@ def save_restart_ledger(worktree_path, agent_id, *, state_root, ledger):
     ledger['history'] = ledger['history'][-RESTART_LEDGER_HISTORY_LIMIT:]
     ledger['updated_at'] = _utc_now()
     atomic_json(restart_ledger_path(root, agent_id), ledger)
+
+
+def _delete_session_pointer(worktree_path, state_root):
+    """Drop the private saved_session pointer; missing is already the goal."""
+    try:
+        state_path(worktree_path, state_root).unlink()
+    except FileNotFoundError:
+        pass
 
 
 def plan_restart(worktree_path, agent_id, state_root, *, resume_session_id=None,
@@ -298,13 +308,14 @@ def plan_restart(worktree_path, agent_id, state_root, *, resume_session_id=None,
             'fresh_session_count': ledger['fresh_session_count'],
             'prompt_source': prompt_source, 'ledger_path': str(ledger_path),
             'recorded_at': _utc_now()})
-        try:
-            state_path(worktree_path, state_root).unlink()
-        except FileNotFoundError:
-            pass
+        _delete_session_pointer(worktree_path, state_root)
         # The condemned session must not resurface through the stale local copy.
         previous = None
         fresh_reset = True
+    rotated_ids = {entry.get('archived_session_id') for entry in ledger['history']
+                   if entry.get('event') == 'session_rotated'
+                   and isinstance(entry.get('archived_session_id'), str)}
+    rotation_reset = False
     resolved = resume_session_id
     if resolved is not None:
         checked_id(resolved)
@@ -312,15 +323,62 @@ def plan_restart(worktree_path, agent_id, state_root, *, resume_session_id=None,
             # The ledger condemned this exact session; a requested resume id
             # extracted from the dead agent's log must not resurrect it.
             resolved = None
+        elif previous is None and resolved in rotated_ids:
+            # Crash between a phase-barrier rotation and the fresh session's
+            # first recorded save: a stale log extraction must not resurrect
+            # the rotated session, and the continuation guard below must not
+            # block the replacement fresh start either.
+            resolved = None
+            rotation_reset = True
         elif previous is not None and previous != resolved:
             raise ValueError('Requested session differs from the exact recorded native session')
     elif previous is not None:
         resolved = previous
+    elif rotated_ids:
+        # A rotation archived the only recorded session and no replacement id
+        # was requested or could be extracted from the log: the fresh
+        # continuation must not hit the refused-fresh guard below.
+        rotation_reset = True
     elif not fresh_reset and prompt_source in {'resume', 'restart', 'reflect', 'pivot'}:
         raise ValueError('Continuation has no native session identity; refusing to start fresh')
     return {'state_root': state_root, 'previous_session_id': previous, 'resume_session_id': resolved,
-            'fresh_reset': fresh_reset, 'archived_session_id': archived,
+            'fresh_reset': fresh_reset, 'rotation_reset': rotation_reset, 'archived_session_id': archived,
             'fresh_session_count': ledger['fresh_session_count'], 'ledger': ledger,
+            'ledger_path': ledger_path}
+
+
+def rotate_session(worktree_path, agent_id, state_root, *, reason):
+    """Manager-driven phase-barrier session rotation (AgentLab-style).
+
+    This is the routine counterpart of plan_restart's failure escape: the team
+    manager archives the current native session at a phase barrier so the next
+    launch starts a fresh session and the agent continues from its externalized
+    wiki/notes instead of a linearly grown transcript. The bookkeeping reuses
+    the restart-ledger machinery, but a rotation never touches
+    consecutive_failures and is not bounded by RESTART_ESCAPE_FAILURES or
+    FRESH_SESSION_LIMIT; it is recorded separately in rotated_session_count
+    and in a manager-private receipt beside the ledger. ``reason`` names the
+    team phase barrier (for example ``review:r1`` or ``synthesize``).
+    """
+    state_root = private_state_root(worktree_path, state_root)
+    previous = saved_session(worktree_path, agent_id, state_root=state_root)
+    ledger = load_restart_ledger(worktree_path, agent_id, state_root=state_root)
+    ledger_path = restart_ledger_path(state_root, agent_id)
+    archived = ledger['current_session_id'] or previous
+    ledger['rotated_session_count'] += 1
+    ledger['current_session_id'] = None
+    ledger['history'].append({'event': 'session_rotated', 'recorded_at': _utc_now(),
+        'archived_session_id': archived, 'reason': reason})
+    save_restart_ledger(worktree_path, agent_id, state_root=state_root, ledger=ledger)
+    atomic_json(state_root / (agent_id + '.session-rotation.json'), {
+        'schema_version': SESSION_ROTATION_RECEIPT_SCHEMA, 'agent_id': agent_id,
+        'worktree': str(Path(worktree_path).resolve()), 'archived_session_id': archived,
+        'reason': reason, 'rotated_session_count': ledger['rotated_session_count'],
+        'consecutive_failures': ledger['consecutive_failures'], 'ledger_path': str(ledger_path),
+        'recorded_at': _utc_now()})
+    _delete_session_pointer(worktree_path, state_root)
+    return {'state_root': state_root, 'archived_session_id': archived, 'reason': reason,
+            'rotated_session_count': ledger['rotated_session_count'], 'ledger': ledger,
             'ledger_path': ledger_path}
 
 
@@ -421,6 +479,9 @@ class ResumableDeepSeekRuntime:
                            'unproductive restarts; opening fresh session #%s', agent_id,
                            plan['archived_session_id'], RESTART_ESCAPE_FAILURES,
                            plan['fresh_session_count'])
+        elif plan['rotation_reset']:
+            logger.warning('Restart ledger for %s refused to resurrect rotated session; '
+                           'opening a fresh session instead', agent_id)
         elif plan['previous_session_id'] is not None:
             # CORAL's generic whole-manager validator recognizes Claude files
             # only. Recover our exact private pointer, never a guessed latest log.
@@ -436,6 +497,10 @@ class ResumableDeepSeekRuntime:
             prompt += (f'\n\n[runtime status] {where} after {RESTART_ESCAPE_FAILURES} consecutive '
                        'unproductive restarts (context window exhausted); workspace files are '
                        f'intact. This is fresh session #{plan["fresh_session_count"]} for this agent.')
+        elif plan['rotation_reset']:
+            prompt += ('\n\n[runtime status] The previous phase session was rotated away at a '
+                       'team phase barrier and must not be resumed; workspace files are intact. '
+                       'This fresh session continues from your wiki and shared notes.')
         slot = opts.get('research_slot')
         if slot is not None:
             size = opts.get('research_team_size')

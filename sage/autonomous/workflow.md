@@ -35,6 +35,10 @@ Follow the full ARIS scientific workflow, not just its review gate:
    this reader. Retain it as unread metadata, or resolve a relevant readable source;
    do not substitute an unrelated readable paper to satisfy a count.
 3. Build a research wiki (papers, ideas, claims, negative evidence and decisions).
+   Before every phase transition (ideation, novelty checks, review, each
+   revision, submission), run a memory checkpoint: consolidate the phase's
+   distilled findings into the wiki first — a fresh session at a barrier only
+   has what you externalized.
    Retrieve at least 12 relevant papers. Read at least 6 central papers using
    `mcp__sage_research__read`. This fetches official available paper text and runs
    SAGE's multi-section, exact-excerpt-checked capsule extraction, derived from CoI.

@@ -63,7 +63,8 @@ _TEAM_STATUS_SECTIONS = ('own_proposal', 'frozen_proposals', 'review_history',
 # the on-disk reveal barrier matches the former on-the-wire barrier.
 _TEAM_SNAPSHOT_SLOT_FIELDS = ('slot', 'role', 'next_action', 'review_target',
                               'target_primary_sha256', 'waiting_for',
-                              'own_proposal', 'incoming_issues', 'peer_advice_audits')
+                              'own_proposal', 'incoming_issues', 'peer_advice_audits',
+                              'session_rotation')
 
 
 def summarize_tool_output(value):
@@ -850,6 +851,28 @@ class ResearchService:
             # Build the compact wire view outside the team lock; the shared
             # snapshot write must not block peers proposing or reviewing.
             return self.team_status_view(snapshot, arguments)
+        if action == 'rotate_session':
+            # Supervisor-triggered, manager-executed phase-barrier session
+            # rotation. The lifecycle supervisor runs as the agent OS user and
+            # can never touch the manager-private session state; it only
+            # consumes the board's pending one-shot marker over the
+            # authenticated slot channel, and the rotation bookkeeping (ledger
+            # entry, pointer deletion, receipt) happens here, manager-side.
+            phase_key = arguments.get('phase')
+            if not isinstance(phase_key, str) or not phase_key.strip():
+                raise ValueError('Session rotation must name its phase barrier')
+            with self.team_lock:
+                reason = self.team.take_session_rotation(slot, phase_key)
+                roster = self.team.state['roster'][str(slot)]
+                from .dsh_runtime import rotate_session
+                result = rotate_session(roster['cwd'], roster['agent_id'],
+                                        self.run_root / 'session-state', reason=reason)
+            self.event('session_rotated', research_slot=slot, reason=reason,
+                       archived_session_id=result['archived_session_id'],
+                       rotated_session_count=result['rotated_session_count'])
+            return {'rotated': True, 'reason': reason,
+                    'archived_session_id': result['archived_session_id'],
+                    'rotated_session_count': result['rotated_session_count']}
         with self.team_lock:
             self.team.status(slot)
             if action in ('review', 'revise') and type(arguments.get('round')) is not int:
@@ -953,7 +976,7 @@ class ResearchService:
             'registered_agents', 'proposal_count', 'review_count', 'revision_count',
             'synthesis_count', 'event_count', 'scientific_validation', 'independent_acceptance',
             'slot', 'role', 'next_action', 'review_target', 'target_primary_sha256',
-            'waiting_for') if key in snapshot}
+            'waiting_for', 'session_rotation') if key in snapshot}
         own = snapshot.get('own_proposal')
         view['own_proposal'] = None if own is None else {
             'primary_sha256': own.get('primary_sha256'),

@@ -340,6 +340,14 @@ implied by the profile or by software regression results.
 
 以上均为确定性离线行为；归档只改变传输方式，完整字节仍保留在管理器私有副本与共享归档两处，`service-private` 的 0700 权限语义不变。
 
+## 评审 prompt 投影瘦身（autonomous 评审链）
+
+背景：实测 advisory review 第一阶段 prompt 达 2.06MB（约 50 万 token），其中 `RETRIEVED EVIDENCE` 段约 1.89MB——把整个 evidence store（papers/cards 的 claims + source_spans 原文 + searches 记录）原样 JSON 序列化塞进 prompt；第二阶段 `AUTHENTICATED REFERENCE CATALOG` 同样携带全部 in-scope source 的全部 span 原文。评审是 ID 级契约：第一阶段 `validate_review` 只校验 source_ids 是否属于该候选 scope；第二阶段 `validate_feedback` 的引用校验由宿主拿全量私有 catalog 查表（`manager_source_lookup_not_entailment`），原文由程序从冻结证据复制、从不采纳模型自写“引文”。因此模型侧看不看得到 span 原文与门的强度无关，原文宿主侧全量保留。
+
+- **stage 1（scientific_review，`review_prompt`）**：证据段改为确定性紧凑视图 `evidence_view`（`sage.autonomous.evidence-view.v1`）：按 paper 组织，只含 title、abstract（≤800 字符，超出截断加省略标记）、claims 按类别分组（9 个主类别；capsule 额外的 data/baselines 两类保留独立分组不被丢弃；每类 ≤6 条、每条 ≤300 字符）、未验证 inferences、reading_scope 摘要与 targeted passage 块 ID 清单；span 只以 ID 出现在 claims 的 `source_span_ids`；searches 一行式 `{query, purpose, 结果数}`，不嵌结果列表。体积目标：该段 ≤400KB，由构造证据 fixture（全量约 706KB）的回归测试断言，实测视图约 23KB、整份 stage-1 prompt 约 31KB。
+- **stage 2（novelty_feedback，`feedback_prompt`）**：catalog 索引化——每个候选 `closest_prior_art` 指向的最近 1–2 篇 source 保留 span 原文全文（句级比对需要）；其余 in-scope source 只给 claims 紧凑摘要（同 stage 1 格式）+ reference ID 清单；候选无 closest_prior_art 时全部 source 走摘要模式。`ALLOWED REFERENCE IDS BY CANDIDATE` 表照旧全量；宿主侧 `_reference_catalog(evidence)` 不变（仍全量、供校验与原文复制）。
+- **门的强度论证**：两段校验零改动、错误文案不变；校验所需的全部信息（scope、全量 catalog、原文）都在宿主侧冻结证据里，模型侧投影只是“进 prompt 的视图”。对模型从未以原文形式看到的 source 引用 reference ID，宿主照样解析并复制原文（`tests/test_autonomous_evidence_projection.py` 断言）。投影全部确定性实现、不调模型；宿主 evidence store、catalog 构建与请求留痕（`evidence_sha256` 等）不变。
+
 ## 上下文预算与重启健壮性（autonomous 原生入口）
 
 ### 原生 maxTokens 与评审链输出上限
@@ -358,3 +366,13 @@ DSH provider 插件 `@deepseek-ai/dsh-llm-deepseek` 的默认 `maxTokens=256000`
 - **终局**：`fresh_session_count ≥ 2` 且新会话仍连续失败 ≥3 次 → `start()` 抛 `RuntimeError`（消息含槽位、台账路径、最近失败史摘要）。该异常上抛会终止 CORAL manager、结束整个运行——这是用户已批准的终局策略：每个会话都以同样方式死亡的代理不应再继续消耗预算（CORAL 每次重启还重注约 861 token 的 Eval 反馈）。工作区文件保持原样供人工检查。
 - **熔断护栏（降频，非主修复）**：`task.yaml` 的 agents 显式设置 `restart_burst_threshold: 3`、`restart_burst_window: 120`、`restart_pause_seconds: 300`（满足上游 `pause_seconds ≥ window` 约束）。原默认 30 秒窗口在 20–25 秒节奏下永不触发，放宽后 CORAL 熔断才有机会暂停代理。
 - **检查边界**：台账与 receipt 都在 manager 私有的 session-state 目录（0700，agent OS 用户不可见、不可写）；整套机制只影响重启决策，不改写任何科研产物、评分或会话内容；终止运行不等于科学失败判定，最终 `result.json` 按未完成处理。
+
+## 阶段记忆纪律与会话轮换（autonomous 原生入口）
+
+背景：4 代理团队协议原来让槽位在 proposing→reviewing→revising→synthesizing 全程共用一个 DSH 会话，上下文线性累积（实测平均约 38 万 tokens/请求）。参照 AgentLab 的阶段间开新会话、以蒸馏笔记传递状态的做法，SAGE 在阶段屏障做"常规"会话轮换（不是失败逃生），并要求代理在过屏障前把阶段性认知外化。
+
+- **记忆外化检查点**：`team-workflow.md` 规定每个阶段屏障（proposal 冻结后、每轮 review 提交后、每次 revise 提交后、synthesize 前）必须把阶段性认知写入自己的 wiki 或共享 `notes/`（CORAL consolidate 语义：多于两条要点才写、带 creator frontmatter），并给出最低落盘清单（已读论文索引、方向决策、被否候选及原因、未决问题、receipt 指针）。`lifecycle.py` 的续跑 prompt 里固定带一行 barrier checkpoint 提醒。
+- **轮换标记**：`TeamBoard` 在 status 读取路径上为每个槽位、每个原生会话、每个阶段屏障发放一次性 `session_rotation` 标记（如 `review:r1`、`synthesize`；`propose` 不轮换，因为会话刚创建），标记 pending 期间随每次 status 重发，被消费即止；同一屏障不会轮换同一会话两次。槽位以新 session_id 重新注册（轮换或逃生后的新会话）时标记记录重置。
+- **执行链**：监督进程（agent OS 用户，永不接触 manager 私有状态）在停泊唤醒时发现标记 → 经 slot 鉴权的 `/tool` 请求 `rotate_session` → manager 侧 `TeamBoard.take_session_rotation` 校验并消费该一次性标记（无标记的请求一律拒绝，代理无法伪造轮换）→ `dsh_runtime.rotate_session(cwd, agent_id, session-state, reason=屏障名)` 在 manager 侧写台账 history（`session_rotated` 事件，含 reason）、累加独立的 `rotated_session_count`、删除 saved_session 指针、写 manager 私有 `<agent-id>.session-rotation.json` receipt → 监督进程随后以不带 `--session-id` 的 argv 启动全新原生会话，续跑 prompt 带 `[rotate-session]` 标记 + 一行由台账状态生成的话（被归档会话 id、第几次轮换、工作区文件完好、从 wiki/notes 恢复）。新会话的 session 事件经 manager 泵重新登记后，board 重置该槽位的轮换记录。
+- **与失败逃生的区别**：轮换不计入 `consecutive_failures`，不受 `RESTART_ESCAPE_FAILURES`/`FRESH_SESSION_LIMIT` 限制，也不消耗 `fresh_session_count`；它是预算纪律而非恢复策略。反之，逃生归档（`session_archived`）语义不变。
+- **异常与并发**：轮换请求被拒或失败时，监督进程退回普通的同会话续跑（旧行为），且不在监督侧重试轮换；指针删除后 DSH 启动失败按普通失败计入台账（下次 `plan_restart` 时，若 CORAL 从旧日志提取到已轮换会话的 id，拒绝复活并以 `rotation_reset` 直接开新会话，绕过"拒绝无身份新开"的守卫；无请求 id 时同理）。台账/receipt 全部在 manager 私有的 session-state 目录（0700），监督进程与代理同 OS 用户，因此任何台账写入都只发生在 manager 侧；整套机制只改启动决策与 prompt，不改写科研产物、评分或会话内容。

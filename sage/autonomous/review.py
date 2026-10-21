@@ -32,6 +32,137 @@ AXES = {
 }
 
 PROJECTION_VERSION = 'sage.autonomous.scientific-projection.v1'
+EVIDENCE_VIEW_VERSION = 'sage.autonomous.evidence-view.v1'
+
+# Claim grouping for the compact evidence projection. The nine primary groups
+# below are the review-facing categories; the capsule pipeline can also emit
+# data/baselines claims, which are preserved in their own groups rather than
+# silently dropped. Mirrors sage.literature.capsule.CATEGORIES.
+_VIEW_CATEGORY_ORDER = ('problem', 'motivation', 'method', 'assumptions', 'data', 'metrics',
+                        'results', 'baselines', 'limitations', 'reproducibility', 'future_work')
+_MAX_CLAIMS_PER_GROUP = 6
+_MAX_CLAIM_CHARS = 300
+_MAX_ABSTRACT_CHARS = 800
+_TRUNCATION_MARKER = ' …[truncated]'
+
+
+def _clip_text(value, limit):
+    """Collapse whitespace and bound text deterministically; None if empty."""
+    if not isinstance(value, str):
+        return None
+    collapsed = ' '.join(value.split())
+    if not collapsed:
+        return None
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[:limit].rstrip() + _TRUNCATION_MARKER
+
+
+def compact_claim_groups(card):
+    """Group a capsule card's claims under review categories with hard bounds.
+
+    Each group keeps at most _MAX_CLAIMS_PER_GROUP claims and each claim at
+    most _MAX_CLAIM_CHARS characters. Source spans appear as IDs only: original
+    span text stays in the host-side evidence store and never enters a prompt.
+    Deterministic and read-only; unknown categories are kept after the primary
+    order instead of being discarded.
+    """
+    groups = {}
+    raw = card.get('claims') if isinstance(card, dict) else None
+    if not isinstance(raw, list):
+        return groups
+    by_category = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        category = item.get('category')
+        if not isinstance(category, str) or not category.strip():
+            continue
+        text = _clip_text(item.get('claim'), _MAX_CLAIM_CHARS)
+        if text is None:
+            continue
+        entry = {'claim': text}
+        span_ids = item.get('source_span_ids')
+        if isinstance(span_ids, list):
+            ids = [x for x in span_ids if isinstance(x, str) and x.strip()]
+            if ids:
+                entry['source_span_ids'] = ids
+        by_category.setdefault(category, []).append(entry)
+    extra = sorted(set(by_category) - set(_VIEW_CATEGORY_ORDER))
+    for category in [name for name in _VIEW_CATEGORY_ORDER if name in by_category] + extra:
+        groups[category] = by_category[category][:_MAX_CLAIMS_PER_GROUP]
+    return groups
+
+
+def evidence_view(evidence):
+    """Deterministic compact projection of the evidence store for model prompts.
+
+    The reviewer sees per-paper titles, clipped abstracts, category-grouped
+    claim summaries, unverified inferences, reading scope and chunk/span IDs.
+    Original span and passage text, search-result lists and coverage
+    bookkeeping never enter the prompt: the host retains the full evidence
+    store and validates every cited ID against it, so hiding the text does not
+    weaken any validation gate.
+    """
+    if not isinstance(evidence, dict):
+        evidence = {}
+    papers = evidence.get('papers')
+    cards = evidence.get('cards')
+    passages = evidence.get('targeted_original_passages')
+    searches = evidence.get('searches')
+    view = {'evidence_view_version': EVIDENCE_VIEW_VERSION,
+            'projection_note': 'Original span/passage text is never transmitted; '
+                               'the host resolves and validates every ID against its full evidence store.',
+            'papers': {}}
+    for pid in sorted(papers) if isinstance(papers, dict) else ():
+        record = papers[pid]
+        record = record if isinstance(record, dict) else {}
+        entry = {}
+        title = record.get('title')
+        if isinstance(title, str) and title.strip():
+            entry['title'] = title
+        abstract = _clip_text(record.get('abstract'), _MAX_ABSTRACT_CHARS)
+        if abstract is not None:
+            entry['abstract'] = abstract
+        scope = record.get('evidence_scope')
+        if isinstance(scope, str) and scope.strip():
+            entry['evidence_scope'] = scope
+        card = cards.get(pid) if isinstance(cards, dict) else None
+        if isinstance(card, dict):
+            groups = compact_claim_groups(card)
+            if groups:
+                entry['claims'] = groups
+            inferences = [_clip_text(x, _MAX_CLAIM_CHARS) for x in card.get('inferences_unverified') or []]
+            inferences = [x for x in inferences if x is not None][:3]
+            if inferences:
+                entry['inferences_unverified'] = inferences
+            coverage = card.get('coverage')
+            if isinstance(coverage, dict):
+                reading = {k: coverage[k] for k in ('available_chunks', 'read_chunks', 'partial_document')
+                           if k in coverage}
+                if reading:
+                    entry['reading_scope'] = reading
+        chunks = passages.get(pid) if isinstance(passages, dict) else None
+        chunk_ids = sorted({c.get('chunk_id') for c in chunks if isinstance(c, dict)
+                            and isinstance(c.get('chunk_id'), str)}) if isinstance(chunks, list) else []
+        if chunk_ids:
+            entry['targeted_passage_chunk_ids'] = chunk_ids
+        view['papers'][pid] = entry
+    if isinstance(searches, list):
+        lines = []
+        for item in searches:
+            if not isinstance(item, dict):
+                continue
+            line = {}
+            for key in ('query', 'purpose'):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    line[key] = value
+            results = item.get('result_ids')
+            line['results'] = len(results) if isinstance(results, list) else 0
+            lines.append(line)
+        view['searches'] = lines
+    return view
 
 # An author may invent any container name, so removing a growing blacklist of
 # assessment names is not a blind-review boundary. Only these scientific fields
@@ -256,7 +387,9 @@ FROZEN RUBRIC:\n''' + canonical_json(rubric_descriptor()) + '\nRESPONSE SCHEMA:\
         '\nBLIND SELECTED SCIENTIFIC INPUT:\n' + canonical_json(document) + \
         '\nCANDIDATE SOURCE SCOPE (IDs may only be cited for these candidates):\n' + \
         canonical_json({ident: sorted(ids) for ident, ids in scopes.items()}) + \
-        '\nRETRIEVED EVIDENCE (with actual reading scope):\n' + canonical_json(evidence)
+        '\nRETRIEVED EVIDENCE (compact deterministic view; original span/passage text is never transmitted;\n' \
+        'the host resolves cited IDs against its full evidence store and validates every reference):\n' + \
+        canonical_json(evidence_view(evidence))
 
 
 def validate_review(value, document, scopes):

@@ -202,8 +202,10 @@ class TeamBoard:
         else:
             self.state = {'schema_version': 'sage.autonomous.team.v1', 'slots': slots,
                           'round_count': rounds, 'roster': {}, 'proposals': {},
-                          'rounds': {}, 'syntheses': [], 'events': []}
+                          'rounds': {}, 'syntheses': [], 'events': [],
+                          'session_rotations': {}}
             self._save()
+        self.state.setdefault('session_rotations', {})
         self.slots, self.rounds = slots, rounds
 
     def _save(self):
@@ -247,6 +249,53 @@ class TeamBoard:
             return copy.deepcopy(record['receipt'])
         raise ValueError('A frozen submission already exists; it cannot be overwritten')
 
+    @staticmethod
+    def _rotation_barrier(action, number):
+        # Phase transitions worth a fresh native session: the first assigned
+        # review/revision of a round and the coordinator's synthesis. The
+        # initial 'propose' runs in the just-created session and never rotates.
+        if action in ('review', 'revise'):
+            return f'{action}:r{number}'
+        if action == 'synthesize':
+            return 'synthesize'
+        return None
+
+    def _issue_rotation(self, key, action, number):
+        """Advertise this slot's pending phase-barrier session rotation.
+
+        The marker is re-advertised with every status read until the manager
+        consumes it through take_session_rotation(); the issued list keeps one
+        barrier from rotating the same native session twice. Entries reset when
+        the slot re-registers with a new native session id.
+        """
+        barrier = self._rotation_barrier(action, number)
+        entry = self.state['session_rotations'].setdefault(key, {
+            'session_id': self.state['roster'][key]['session_id'],
+            'issued': [], 'pending': None})
+        if barrier is not None and barrier not in entry['issued']:
+            entry['issued'].append(barrier)
+            entry['pending'] = barrier
+            self._save()
+        return entry['pending']
+
+    def take_session_rotation(self, slot, phase_key=None):
+        """Manager-side, one-shot consumption of the advertised rotation marker.
+
+        A caller can only ever take the barrier the board advertised for this
+        exact slot; sessions rotate solely on this manager-validated marker.
+        """
+        with self.lock:
+            key = self._slot(slot)
+            entry = self.state['session_rotations'].get(key)
+            if not entry or entry.get('pending') is None:
+                raise ValueError('No pending session rotation for this slot')
+            pending = entry['pending']
+            if phase_key is not None and phase_key != pending:
+                raise ValueError('Pending session rotation belongs to another phase barrier')
+            entry['pending'] = None
+            self._save()
+            return pending
+
     def register(self, slot, agent_id, cwd, session_id):
         """Bind one slot to one actual runtime identity; identical retries are safe."""
         with self.lock:
@@ -257,7 +306,25 @@ class TeamBoard:
             cwd = str(Path(cwd).resolve())
             payload = {'agent_id': agent_id, 'cwd': cwd, 'session_id': session_id}
             if key in self.state['roster']:
-                return self._retry(self.state['roster'][key], payload)
+                existing = self.state['roster'][key]
+                if (existing['agent_id'] == payload['agent_id'] and existing['cwd'] == payload['cwd']
+                        and existing['session_id'] != payload['session_id']):
+                    # Identity-preserving session rebound: the manager rotated the
+                    # slot to a fresh native session (phase barrier) or escaped a
+                    # dead one. The agent/cwd identity is unchanged, so no other
+                    # slot may claim any part of the new payload either.
+                    for other_key, identity in self.state['roster'].items():
+                        if other_key != key and any(identity[name] == payload[name]
+                                                    for name in ('agent_id', 'cwd', 'session_id')):
+                            raise ValueError('Each slot requires a distinct native agent, worktree and session')
+                    receipt = self._receipt('register', slot, payload, role=ROLES[slot],
+                                            session_rebound=True)
+                    self.state['roster'][key] = {**payload, 'role': ROLES[slot], 'receipt': receipt}
+                    self.state['session_rotations'][key] = {
+                        'session_id': payload['session_id'], 'issued': [], 'pending': None}
+                    self._save()
+                    return copy.deepcopy(receipt)
+                return self._retry(existing, payload)
             for identity in self.state['roster'].values():
                 if any(identity[name] == payload[name] for name in ('agent_id', 'cwd', 'session_id')):
                     raise ValueError('Each slot requires a distinct native agent, worktree and session')
@@ -266,7 +333,7 @@ class TeamBoard:
             self._save()
             return copy.deepcopy(receipt)
 
-    def status(self, slot=None):
+    def status(self, slot=None, *, rotation_check=False):
         with self.lock:
             result = self.summary()
             if slot is None:
@@ -284,6 +351,10 @@ class TeamBoard:
                 action = 'synthesize' if slot == 0 else 'finished'
             result.update({'slot': slot, 'role': ROLES[slot], 'next_action': action,
                            'review_target': target})
+            if rotation_check:
+                marker = self._issue_rotation(key, action, number)
+                if marker is not None:
+                    result['session_rotation'] = marker
             if target is not None:
                 result['target_primary_sha256'] = self._frozen(number)[str(target)]['primary_sha256']
             return result
@@ -292,7 +363,7 @@ class TeamBoard:
         """Reveal only all-agent frozen phases, never partially submitted peers."""
         with self.lock:
             key = self._slot(slot)
-            result = self.status(slot)
+            result = self.status(slot, rotation_check=True)
             phase, number = self._phase()
             result['own_proposal'] = copy.deepcopy(self.state['proposals'].get(key))
             frozen = (self.state['rounds'][str(self.rounds)]['revisions']

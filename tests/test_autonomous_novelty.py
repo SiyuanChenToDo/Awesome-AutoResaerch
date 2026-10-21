@@ -10,8 +10,10 @@ from sage.autonomous.novelty import (FEEDBACK_VERSION, advice_targets,
 def novelty_fixture():
     # Invented software fixtures below are not scientific evidence.
     document = {'selected_ids': ['C1', 'C2'], 'candidates': [
-        {'id': 'C1', 'hypothesis': 'Fixture mechanism', 'source_ids': ['p1']},
-        {'id': 'C2', 'hypothesis': 'Fixture finding', 'source_ids': ['p2']}]}
+        {'id': 'C1', 'hypothesis': 'Fixture mechanism', 'source_ids': ['p1'],
+         'closest_prior_art': [{'paper_id': 'p1', 'overlap': 'Fixture', 'difference': 'Fixture'}]},
+        {'id': 'C2', 'hypothesis': 'Fixture finding', 'source_ids': ['p2'],
+         'closest_prior_art': [{'paper_id': 'p2', 'overlap': 'Fixture', 'difference': 'Fixture'}]}]}
     evidence = {'papers': {'p1': {'title': 'Fixture prior one'},
                            'p2': {'title': 'Fixture prior two'}},
                 'cards': {'p1': {'source_scope': 'supplied_fixture_text',

@@ -3,7 +3,8 @@
 CORAL's public runtime contract restarts every exited process, including clean
 completions. Keep a real, cancellable supervisor process alive while a worker has
 no assigned action. This is SAGE-owned glue; neither CORAL nor DSH is modified.
-Only authenticated team status can wake a parked worker, in its exact session.
+Only authenticated team status can wake a parked worker, in its exact session,
+or in a fresh one when the manager rotates the session at a phase barrier.
 """
 from __future__ import annotations
 
@@ -418,20 +419,61 @@ def team_status():
     return value
 
 
-def resumed_argv(argv, session_id, slot):
-    """Replace only headless continuation arguments; do not invoke a shell."""
+def request_session_rotation(phase_key):
+    """Have the manager execute the advertised phase-barrier session rotation.
+
+    The supervisor runs as the agent OS user and can never write the
+    manager-private session state; the rotation itself (restart-ledger entry,
+    pointer deletion, receipt) runs inside the manager service, which
+    authorizes it against the team board's pending one-shot marker. This call
+    only consumes that marker, so a slot can never rotate a session the board
+    did not advertise.
+    """
+    request = Request('http://127.0.0.1:' + os.environ['SAGE_RESEARCH_PORT'] + '/tool',
+        data=json.dumps({'tool': 'team',
+                         'arguments': {'action': 'rotate_session', 'phase': phase_key}}).encode(),
+        headers={'Authorization': 'Bearer ' + os.environ['SAGE_RESEARCH_TOKEN'],
+                 'Content-Type': 'application/json'})
+    with urlopen(request, timeout=30) as response:
+        value = json.load(response)
+    if not isinstance(value, dict) or value.get('error') or not value.get('rotated'):
+        raise ValueError('Manager refused the session rotation')
+    return value
+
+
+def resumed_argv(argv, session_id, slot, *, rotation=None):
+    """Replace only headless continuation arguments; do not invoke a shell.
+
+    ``rotation`` is the manager's answer to a ``[rotate-session]`` barrier
+    marker: the previous phase session was archived manager-side, so the new
+    launch starts a fresh native session and the continuation prompt says how
+    to recover the distilled state.
+    """
     checked_id(session_id)
     boundary = argv.index('--json')
-    return [*argv[:boundary + 1], '--session-id', session_id, '--',
-        f'Your authenticated research team slot is {slot}. A new assigned action '
-        'is available after runtime waiting. Call the research team tool with '
-        'action=status and perform its current required action in this existing '
-        'session. Only slot 0 may submit coral eval.']
+    prompt = (f'Your authenticated research team slot is {slot}. A new assigned action '
+              'is available after runtime waiting. Call the research team tool with '
+              'action=status and perform its current required action. Barrier '
+              'checkpoint: ensure your latest findings are saved to your wiki or '
+              'shared notes before polling again. Only slot 0 may submit coral eval.')
+    if rotation is None:
+        return [*argv[:boundary + 1], '--session-id', session_id, '--',
+                prompt]
+    reason = rotation.get('reason')
+    archived = rotation.get('archived_session_id')
+    count = rotation.get('rotated_session_count')
+    where = (f'previous phase session {archived} was rotated'
+             if archived else 'the previous phase session was rotated')
+    prompt += (f'\n\n[rotate-session] Phase barrier {reason!r}: {where} away by the '
+               f'manager (rotation #{count} for this agent); workspace files are '
+               'intact. This is a fresh native session: resume from your wiki and '
+               'the shared notes/ directory, which carry the distilled team state.')
+    return [*argv[:boundary + 1], '--', prompt]
 
 
 def supervise(argv, slot, *, deadline, poll_seconds=20, status=team_status,
               emit=None, stop=None, clock=time.time, launch=subprocess.Popen,
-              terminate=stop_native_tree):
+              terminate=stop_native_tree, rotate=request_session_rotation):
     """Run DSH, then park completed/barrier workers without new model calls.
 
     ``stop`` is also used by signal handlers. Deadline is absolute and therefore
@@ -525,8 +567,23 @@ def supervise(argv, slot, *, deadline, poll_seconds=20, status=team_status,
                         # Let CORAL record/recover that exit through its normal
                         # restart path rather than hide a task failure.
                         return 0
-                    current = resumed_argv(argv, session_id, slot)
+                    rotation = None
+                    marker = snapshot.get('session_rotation')
+                    if marker:
+                        try:
+                            rotation = rotate(marker)
+                        except Exception:
+                            # Rotation is routine discipline, not a reliability
+                            # gate: a refused or failed request falls back to
+                            # the ordinary same-session resume and is never
+                            # retried by the supervisor itself.
+                            rotation = None
+                    current = resumed_argv(argv, session_id, slot, rotation=rotation)
                     receipt('resuming')
+                    if rotation is not None:
+                        # The fresh launch must attest its own new session id;
+                        # the rotated one is archived manager-side.
+                        session_id = None
                     break
                 receipt('waiting' if parked else 'parked')
                 parked = True

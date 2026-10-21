@@ -9,11 +9,16 @@ from __future__ import annotations
 import copy
 import hashlib
 
-from .review import canonical_json, source_scope
+from .review import canonical_json, compact_claim_groups, source_scope
 from ..errors import ValidationDetailError
 
 
 FEEDBACK_VERSION = 'sage.autonomous.novelty-feedback.v1'
+
+# A candidate names at most this many closest-prior-art sources whose original
+# span text is worth transmitting for sentence-level comparison; every other
+# cataloged source is projected as a claim summary plus reference IDs.
+_CLOSEST_PRIOR_ART_FULL_TEXT_LIMIT = 2
 
 
 def _text(value, name):
@@ -89,6 +94,50 @@ def _reference_catalog(evidence):
     return catalog
 
 
+def _closest_prior_sources(document, evidence):
+    """Paper IDs named as a candidate's nearest prior art, in declared order.
+
+    Only evidence-store papers qualify (source_scope adds them to the candidate
+    scope host-side). Candidates without closest_prior_art contribute none, so
+    every in-scope source falls back to the compact summary catalog.
+    """
+    papers = evidence.get('papers') if isinstance(evidence.get('papers'), dict) else {}
+    candidates = document.get('candidates') if isinstance(document, dict) else None
+    closest = []
+    for candidate in candidates or []:
+        if not isinstance(candidate, dict):
+            continue
+        prior = candidate.get('closest_prior_art')
+        if not isinstance(prior, list):
+            continue
+        for entry in prior[:_CLOSEST_PRIOR_ART_FULL_TEXT_LIMIT]:
+            if (isinstance(entry, dict) and isinstance(entry.get('paper_id'), str)
+                    and entry['paper_id'] in papers and entry['paper_id'] not in closest):
+                closest.append(entry['paper_id'])
+    return closest
+
+
+def _prompt_catalog(document, evidence):
+    """Model-side catalog: full span text only for named closest prior art.
+
+    Every other cataloged source gets the compact claim-summary projection and
+    a reference-ID list, never original text. The host-side _reference_catalog
+    stays complete and is what validate_feedback checks against, so references
+    to summarized sources remain fully enforceable.
+    """
+    catalog = _reference_catalog(evidence)
+    cards = evidence.get('cards') if isinstance(evidence.get('cards'), dict) else {}
+    closest = set(_closest_prior_sources(document, evidence))
+    projected = {}
+    for source_id in sorted(catalog):
+        if source_id in closest:
+            projected[source_id] = catalog[source_id]
+        else:
+            projected[source_id] = {'claims': compact_claim_groups(cards.get(source_id)),
+                                    'reference_ids': sorted(catalog[source_id])}
+    return projected
+
+
 def feedback_prompt(document, evidence, review):
     """Build a new-context audit without transmitting the first review's grades."""
     schema = {'feedback_version': FEEDBACK_VERSION,
@@ -116,10 +165,11 @@ def feedback_prompt(document, evidence, review):
                       'simplification': item.get('simplification_opportunities', []),
                       'modernization': item.get('modernization_opportunities', [])}
                      for item in review.get('candidate_reviews', [])]
-    # Original text appears once in the reference catalog. Preserve capsule
-    # claims and coverage while replacing repeated source bodies with IDs.
+    # Original text appears in the catalog only for named closest prior art;
+    # every other source body is replaced by compact claim summaries and IDs.
     evidence_view = copy.deepcopy(evidence)
     catalog = _reference_catalog(evidence)
+    prompt_catalog = _prompt_catalog(document, evidence)
     for card in evidence_view.get('cards', {}).values():
         card['source_spans'] = {'reference_ids': ['card:' + key for key in card.get('source_spans', {})]}
     evidence_view['targeted_original_passages'] = {
@@ -138,12 +188,16 @@ Compare claims against ONLY supplied candidate-scoped sources. covered requires 
 containing the asserted mechanism/result, not merely a component. distinct_within_evidence is
 only a comparison to the authenticated passages provided here, never a global novelty finding.
 Both determinate statuses require a closest source with a title and an actual source reference
-from that same source. Select reference IDs; the host supplies their exact original quotations.
-Do not retype quotations or add your own evidence. Matching a source ID/text proves attribution,
-not entailment. Abstract-only or selected text can be inadequate: omitted detail is not absence
-from the complete paper. Inadequate/empty comparison evidence requires unknown. A source title
-or an author-written quote is not adequate source evidence. Explain reading and search limits
-for every claim; no new search, experiment or scientific validation is performed in this call.
+from that same source; the closest source's original text is included below for sentence-level
+comparison. Select reference IDs; every cataloged reference ID remains selectable and the host
+validates each against its full private catalog, copying the exact original quotation. Claim
+summaries state what summarized sources contain; their reference IDs resolve to the same
+authenticated text. Do not retype quotations or add your own evidence. Matching a source
+ID/reference ID proves attribution, not entailment. Abstract-only or selected text can be
+inadequate: omitted detail is not absence from the complete paper. Inadequate/empty comparison
+evidence requires unknown. A source title or an author-written quote is not adequate source
+evidence. Explain reading and search limits for every claim; no new search, experiment or
+scientific validation is performed in this call.
 
 Audit EVERY supplied advice target exactly once. Judge the criticism and its proposed remedy
 SEPARATELY: problem_verdict supported/disputed/unknown, repair_verdict helpful/harmful/unknown.
@@ -166,8 +220,11 @@ Do not provide probabilities, confidence percentages, novelty scores, acceptance
 Return ONLY JSON matching the response schema, with no extra fields.
 RESPONSE SCHEMA:
 ''' + canonical_json(schema) + '\nSELECTED SCIENTIFIC INPUT:\n' + canonical_json(document) + \
-        '\nSUPPLIED EVIDENCE (original text appears in reference catalog only):\n' + canonical_json(evidence_view) + \
-        '\nAUTHENTICATED REFERENCE CATALOG (candidate source scope still applies):\n' + canonical_json(catalog) + \
+        '\nSUPPLIED EVIDENCE (source bodies replaced by reference IDs; original text appears in the\n' \
+        'reference catalog only where explicitly listed):\n' + canonical_json(evidence_view) + \
+        '\nAUTHENTICATED REFERENCE CATALOG (full original text only for each candidate\'s named closest\n' \
+        'prior art; other sources give claim summaries and reference IDs; the host validates against\n' \
+        'its complete private catalog; candidate source scope still applies):\n' + canonical_json(prompt_catalog) + \
         '\nALLOWED REFERENCE IDS BY CANDIDATE (do not use another candidate scope):\n' + canonical_json({
             ident: {source: list(catalog.get(source, {})) for source in sorted(ids)}
             for ident, ids in source_scope(document, evidence.get('papers', {})).items()}) + \

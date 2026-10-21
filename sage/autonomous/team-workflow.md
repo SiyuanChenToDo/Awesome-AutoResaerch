@@ -126,15 +126,49 @@ do not claim their later critique caused a change already made before it.
 If a barrier is waiting, finish any useful relevant source checks and save your
 notes. Non-coordinator slots may then end the native turn cleanly. The runtime
 supervisor waits without model calls, polls authenticated team status and resumes
-the exact existing session only when your next assigned action becomes available.
+the exact existing session only when your next assigned action becomes available;
+at a phase barrier the manager may instead rotate you into a fresh native
+session (the continuation prompt carries a `[rotate-session]` marker), which is
+why the checkpoint below is mandatory.
 When status says `finished`, save receipts and end the turn; do not keep calling
 status, sleeping in shell or commissioning unassigned critiques. This does not
 complete the manager's run or terminate slot 0. Only the coordinator continues
 the synthesis and formal submission loop; the manager owns shutdown and budgets.
 
+### Memory checkpoint at every phase barrier (mandatory)
+
+A phase barrier is: right after your proposal is frozen, after you submit each
+round's peer review, right after you submit each revision, and before the
+coordinator starts synthesis. The runtime may open a fresh native session at
+any of these barriers; a new session only has what you externalized. Before
+you cross each barrier, you MUST have saved the phase's distilled cognition to
+your own wiki or the shared `notes/` directory. Follow CORAL's consolidate
+discipline: write a note only when you have more than two distinct points, and
+give every note a frontmatter header that records its creator (your slot and
+agent id) and timestamp. Never rely on the conversation transcript to carry
+state across a barrier.
+
+Minimum landing checklist before crossing a barrier:
+
+- An index of the papers you actually read this phase (paper IDs and one-line
+  takeaways), plus papers you rejected as irrelevant and why.
+- Direction decisions: which candidate line you pursued, which you abandoned,
+  and the evidence-based reason.
+- Rejected or scooped candidates with their rejection reasons, so peers and
+  the synthesis can reuse the negative evidence.
+- Open issues you did not resolve, and what the next phase needs to check.
+- Receipt pointers for this phase's submissions (the receipt, not prose, is
+  the record of what was submitted).
+
+If you cannot write at least the paper index and direction decisions, you are
+not done with the phase; finish the externalization before submitting or
+ending the turn.
+
 ## Synthesis and formal submission
 
-Only authenticated slot 0 synthesizes and invokes `coral eval`. After the final
+Only authenticated slot 0 synthesizes and invokes `coral eval`. Run the memory
+checkpoint above before synthesis: the coordinator starts from externalized
+notes (wiki/shared `notes/`), not from peers' transcripts. After the final
 round's revisions are complete, inspect every final frozen proposal and decision
 record via `team(action="status", detail="full")` (or
 `sections=["frozen_proposals","revision_history","syntheses"]`). Build the common
