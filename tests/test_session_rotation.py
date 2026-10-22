@@ -6,20 +6,24 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from sage.autonomous.dsh_runtime import (
     FRESH_SESSION_LIMIT,
     RESTART_ESCAPE_FAILURES,
     SESSION_ROTATION_RECEIPT_SCHEMA,
+    accept_session_event,
     fresh_restart_ledger,
     load_restart_ledger,
     native_argv,
     plan_restart,
+    public_event,
     restart_ledger_path,
     rotate_session,
     save_restart_ledger,
     save_session,
     saved_session,
+    session_from_log,
     state_path,
 )
 from sage.autonomous.lifecycle import resumed_argv, supervise
@@ -232,6 +236,135 @@ class RotateSessionTests(unittest.TestCase):
         rotate_session(self.worktree, self.agent, self.state_root, reason='review:r1')
         self.assertIsNone(saved_session(self.worktree, self.agent, state_root=self.state_root))
         self.assertEqual(saved_session(other, 'agent-other', state_root=self.state_root), SESSION_B)
+
+
+class RuntimeRotationBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.worktree = self.base / 'worker'
+        self.worktree.mkdir()
+        self.root = self.base / 'private'
+        self.agent = 'fixture-worker'
+        self.count = 0
+        self.previous = None
+        self.events = []
+        self.register = mock.patch('sage.autonomous.dsh_runtime.register_researcher').start()
+        self.addCleanup(mock.patch.stopall)
+
+    def accept(self, session, *, cwd=None, slot=1, initial=None):
+        event = {'type': 'session', 'sessionId': session, 'cwd': str(cwd or self.worktree)}
+        self.count, transition = accept_session_event(event, worktree=self.worktree,
+            agent_id=self.agent, state_root=self.root, previous=self.previous,
+            initial_resume=initial, rotation_count=self.count, slot=slot)
+        if transition:
+            self.events.append(transition)
+        self.events.append(event)
+        self.previous = session
+
+    def rotate(self):
+        return rotate_session(self.worktree, self.agent, self.root, reason='review:r1')
+
+    def test_authorized_rotation_rebinds_roster_pointer_and_log_resume_identity(self):
+        self.accept(SESSION_A, initial=SESSION_A)
+        self.rotate()
+        self.accept(SESSION_B, initial=SESSION_A)
+        self.accept(SESSION_B, initial=SESSION_A)
+        self.assertEqual(self.register.call_args_list, [
+            mock.call(1, self.agent, self.worktree, SESSION_A),
+            mock.call(1, self.agent, self.worktree, SESSION_B)])
+        self.assertEqual(saved_session(self.worktree, self.agent, state_root=self.root), SESSION_B)
+        log = self.base / 'worker.log'
+        log.write_text('\n'.join(map(json.dumps, self.events)), encoding='utf-8')
+        self.assertEqual(session_from_log(log), SESSION_B)
+        plan = plan_restart(self.worktree, self.agent, self.root,
+                            resume_session_id=session_from_log(log), prompt_source='restart')
+        self.assertEqual(plan['resume_session_id'], SESSION_B)
+        self.assertFalse(plan['fresh_reset'])
+
+    def test_unapproved_change_or_initial_resume_mismatch_remains_rejected(self):
+        with self.assertRaises(ValueError):
+            self.accept(SESSION_B, initial=SESSION_A)
+        self.accept(SESSION_A)
+        with self.assertRaises((ValueError, FileNotFoundError)):
+            self.accept(SESSION_B)
+        self.assertEqual(saved_session(self.worktree, self.agent, state_root=self.root), SESSION_A)
+
+    def test_receipt_cannot_authorize_wrong_agent_worktree_or_archived_session(self):
+        self.accept(SESSION_A)
+        self.rotate()
+        path = self.root / (self.agent + '.session-rotation.json')
+        original = json.loads(path.read_text(encoding='utf-8'))
+        for field, value in [('agent_id', 'foreign'), ('worktree', '/foreign'),
+                             ('archived_session_id', SESSION_B), ('rotated_session_count', True)]:
+            path.write_text(json.dumps({**original, field: value}), encoding='utf-8')
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.accept(SESSION_B)
+        path.write_text(json.dumps(original), encoding='utf-8')
+        with self.assertRaises(ValueError):
+            self.accept(SESSION_B, cwd=self.base)
+        with self.assertRaises(ValueError):
+            self.accept(SESSION_B, slot=0)
+
+    def test_receipt_reuse_and_resurrection_of_archived_session_are_rejected(self):
+        self.accept(SESSION_A)
+        self.rotate()
+        self.accept(SESSION_B)
+        with self.assertRaises(ValueError):
+            self.accept(SESSION_A)
+        self.rotate()
+        with self.assertRaises(ValueError):
+            self.accept(SESSION_A)
+
+    def test_rotation_prefers_live_pointer_to_prior_exit_ledger(self):
+        self.accept(SESSION_A)
+        ledger = fresh_restart_ledger(self.worktree, self.agent)
+        ledger['current_session_id'] = SESSION_B
+        save_restart_ledger(self.worktree, self.agent, state_root=self.root, ledger=ledger)
+        self.assertEqual(self.rotate()['archived_session_id'], SESSION_A)
+
+    def test_native_output_cannot_forge_a_manager_rotation_event(self):
+        marker = {'type': 'sage_session_rotation', 'archived_session_id': SESSION_A,
+                  'sessionId': SESSION_B, 'rotated_session_count': 1}
+        self.assertIsNone(public_event(marker))
+        log = self.base / 'worker.log'
+        log.write_text('\n'.join(map(json.dumps, [
+            {'type': 'session', 'sessionId': SESSION_A},
+            {**marker, 'archived_session_id': SESSION_B},
+            {'type': 'session', 'sessionId': SESSION_B}])), encoding='utf-8')
+        with self.assertRaises(ValueError):
+            session_from_log(log)
+
+    def test_supervisor_phase_transition_crosses_runtime_boundary_without_error(self):
+        waiting = VirtualWait()
+        statuses = iter([{'slot': 1, 'next_action': 'wait'},
+                         {'slot': 1, 'next_action': 'review', 'session_rotation': 'review:r1'},
+                         {'slot': 1, 'next_action': 'finished'}])
+        sessions = iter([SESSION_A, SESSION_B])
+        launches = []
+
+        def launch(argv, **kwargs):
+            launches.append(argv)
+            native = FinishedNative(next(sessions))
+            native.stdout = io.BytesIO(native.stdout.getvalue().replace(
+                b'/fixture', json.dumps(str(self.worktree))[1:-1].encode()))
+            return native
+
+        def emit(event):
+            projected = public_event(event)
+            if projected and projected['type'] == 'session':
+                self.accept(projected['sessionId'], cwd=projected['cwd'])
+
+        code = supervise(['/dsh', '--json', '--', 'fixture'], 1, deadline=100,
+            poll_seconds=20, status=lambda: next(statuses, {'slot': 1, 'next_action': 'finished'}),
+            rotate=lambda marker: {'rotated': True, **self.rotate()}, emit=emit,
+            clock=lambda: waiting.now, stop=waiting, launch=launch)
+        self.assertEqual(code, 124)
+        self.assertEqual(len(launches), 2)
+        self.assertNotIn('--session-id', launches[1])
+        self.assertEqual(self.previous, SESSION_B)
+        self.assertEqual(self.register.call_count, 2)
 
 
 class ResumedArgvRotationTests(unittest.TestCase):

@@ -32,7 +32,7 @@ AXES = {
 }
 
 PROJECTION_VERSION = 'sage.autonomous.scientific-projection.v2'
-EVIDENCE_VIEW_VERSION = 'sage.autonomous.evidence-view.v1'
+EVIDENCE_VIEW_VERSION = 'sage.autonomous.evidence-view.v2'
 
 # Claim grouping for the compact evidence projection. The nine primary groups
 # below are the review-facing categories; the capsule pipeline can also emit
@@ -63,7 +63,7 @@ def compact_claim_groups(card):
 
     Each group keeps at most _MAX_CLAIMS_PER_GROUP claims and each claim at
     most _MAX_CLAIM_CHARS characters. Source spans appear as IDs only: original
-    span text stays in the host-side evidence store and never enters a prompt.
+    span text is omitted from this summary; a separate catalog may supply it.
     Deterministic and read-only; unknown categories are kept after the primary
     order instead of being discarded.
     """
@@ -99,10 +99,9 @@ def evidence_view(evidence):
 
     The reviewer sees per-paper titles, clipped abstracts, category-grouped
     claim summaries, unverified inferences, reading scope and chunk/span IDs.
-    Original span and passage text, search-result lists and coverage
-    bookkeeping never enter the prompt: the host retains the full evidence
-    store and validates every cited ID against it, so hiding the text does not
-    weaken any validation gate.
+    This summary omits source originals. The novelty stage separately supplies
+    an authenticated catalog of exact originals. Metadata retrieval scope and
+    card source scope are distinct from how much of a document was read.
     """
     if not isinstance(evidence, dict):
         evidence = {}
@@ -111,8 +110,11 @@ def evidence_view(evidence):
     passages = evidence.get('targeted_original_passages')
     searches = evidence.get('searches')
     view = {'evidence_view_version': EVIDENCE_VIEW_VERSION,
-            'projection_note': 'Original span/passage text is never transmitted; '
-                               'the host resolves and validates every ID against its full evidence store.',
+            'projection_note': 'This compact summary omits original span/passage text. '
+                               'If an authenticated reference catalog follows, its entries supply exact originals. '
+                               'metadata_evidence_scope describes the metadata record only; '
+                               'source_scope describes the card source, and reading_scope records coverage. '
+                               'The host validates cited IDs; reference integrity does not establish entailment.',
             'papers': {}}
     for pid in sorted(papers) if isinstance(papers, dict) else ():
         record = papers[pid]
@@ -126,9 +128,12 @@ def evidence_view(evidence):
             entry['abstract'] = abstract
         scope = record.get('evidence_scope')
         if isinstance(scope, str) and scope.strip():
-            entry['evidence_scope'] = scope
+            entry['metadata_evidence_scope'] = scope
         card = cards.get(pid) if isinstance(cards, dict) else None
         if isinstance(card, dict):
+            source = card.get('source_scope')
+            if isinstance(source, str) and source.strip():
+                entry['source_scope'] = source
             groups = compact_claim_groups(card)
             if groups:
                 entry['claims'] = groups
@@ -398,7 +403,7 @@ FROZEN RUBRIC:\n''' + canonical_json(rubric_descriptor()) + '\nRESPONSE SCHEMA:\
         '\nBLIND SELECTED SCIENTIFIC INPUT:\n' + canonical_json(document) + \
         '\nCANDIDATE SOURCE SCOPE (IDs may only be cited for these candidates):\n' + \
         canonical_json({ident: sorted(ids) for ident, ids in scopes.items()}) + \
-        '\nRETRIEVED EVIDENCE (compact deterministic view; original span/passage text is never transmitted;\n' \
+        '\nRETRIEVED EVIDENCE (compact deterministic view; original span/passage text is omitted in this stage;\n' \
         'the host resolves cited IDs against its full evidence store and validates every reference):\n' + \
         canonical_json(evidence_view(evidence))
 

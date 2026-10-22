@@ -133,18 +133,28 @@ def session_from_log(path):
     path = Path(path)
     if not path.is_file():
         return None
-    found = None
+    found, pending, rotation_count = None, None, 0
     with path.open(encoding='utf-8') as stream:
         for line in stream:
             try:
                 event = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(event, dict) and event.get('type') == 'session':
+            if isinstance(event, dict) and event.get('type') == 'sage_session_rotation':
+                # Only the manager writes this event, after checking its private
+                # rotation receipt. public_event never accepts it from a worker.
+                target = checked_id(event.get('sessionId'))
+                count = event.get('rotated_session_count')
+                if (pending is not None or found is None or event.get('archived_session_id') != found
+                        or target == found or type(count) is not int or count <= rotation_count):
+                    raise ValueError('Invalid native session rotation chain')
+                pending, rotation_count = target, count
+            elif isinstance(event, dict) and event.get('type') == 'session':
                 current = checked_id(event.get('sessionId'))
-                if found is not None and current != found:
+                if (pending is not None and current != pending) or (
+                        pending is None and found is not None and current != found):
                     raise ValueError('Conflicting native session identifiers in one launch')
-                found = current
+                found, pending = current, None
     return found
 
 
@@ -364,7 +374,9 @@ def rotate_session(worktree_path, agent_id, state_root, *, reason):
     previous = saved_session(worktree_path, agent_id, state_root=state_root)
     ledger = load_restart_ledger(worktree_path, agent_id, state_root=state_root)
     ledger_path = restart_ledger_path(state_root, agent_id)
-    archived = ledger['current_session_id'] or previous
+    # The pointer tracks the live session; the exit ledger may describe the
+    # session from a previous launch until this launch exits.
+    archived = previous or ledger['current_session_id']
     ledger['rotated_session_count'] += 1
     ledger['current_session_id'] = None
     ledger['history'].append({'event': 'session_rotated', 'recorded_at': _utc_now(),
@@ -380,6 +392,48 @@ def rotate_session(worktree_path, agent_id, state_root, *, reason):
     return {'state_root': state_root, 'archived_session_id': archived, 'reason': reason,
             'rotated_session_count': ledger['rotated_session_count'], 'ledger': ledger,
             'ledger_path': ledger_path}
+
+
+def accept_session_event(event, *, worktree, agent_id, state_root, previous,
+                         initial_resume, rotation_count, slot, native_process=None):
+    """Bind a native session, permitting only a manager-authorized phase rotation."""
+    native_id = checked_id(event.get('sessionId'))
+    if Path(event['cwd']).resolve() != Path(worktree).resolve():
+        raise ValueError('Native DSH resumed an unexpected worktree')
+    transition = None
+    if previous is None:
+        if initial_resume is not None and native_id != initial_resume:
+            raise ValueError('Native DSH resumed an unexpected session')
+    elif previous != native_id:
+        root = private_state_root(worktree, state_root)
+        receipt_path = root / (agent_id + '.session-rotation.json')
+        if slot not in (1, 2, 3) or receipt_path.is_symlink():
+            raise ValueError('Native session change has no authorized worker rotation')
+        receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+        ledger = load_restart_ledger(worktree, agent_id, state_root=root)
+        count = receipt.get('rotated_session_count')
+        history = ledger['history']
+        last = history[-1] if history else {}
+        if (receipt.get('schema_version') != SESSION_ROTATION_RECEIPT_SCHEMA
+                or receipt.get('agent_id') != agent_id
+                or receipt.get('worktree') != str(Path(worktree).resolve())
+                or receipt.get('archived_session_id') != previous
+                or type(count) is not int or count <= rotation_count
+                or count != ledger['rotated_session_count']
+                or ledger['current_session_id'] is not None
+                or state_path(worktree, root).exists()
+                or last.get('event') != 'session_rotated'
+                or last.get('archived_session_id') != previous
+                or last.get('reason') != receipt.get('reason')
+                or any(item.get('archived_session_id') == native_id for item in history)):
+            raise ValueError('Native session change does not match the private rotation receipt')
+        rotation_count = count
+        transition = {'type': 'sage_session_rotation', 'archived_session_id': previous,
+                      'sessionId': native_id, 'rotated_session_count': count}
+    save_session(worktree, agent_id, native_id, state_root=state_root, native_process=native_process)
+    if slot is not None and previous != native_id:
+        register_researcher(slot, agent_id, worktree, native_id)
+    return rotation_count, transition
 
 
 class ResumableDeepSeekRuntime:
@@ -584,7 +638,8 @@ class ResumableDeepSeekRuntime:
         handle = AgentHandle(agent_id=agent_id, process=process, worktree_path=worktree_path,
                              log_path=log_path, err_file=err_file, err_path=err_path)
         ready = threading.Event()
-        state = {'session_id': None, 'error': None}
+        state = {'session_id': None, 'error': None,
+                 'rotation_count': plan['ledger']['rotated_session_count']}
 
         def pump():
             try:
@@ -601,14 +656,12 @@ class ResumableDeepSeekRuntime:
                         continue
                     if projected['type'] == 'session':
                         native_id = projected['sessionId']
-                        if (Path(projected['cwd']).resolve() != worktree_path or
-                                (resume_session_id and native_id != resume_session_id) or
-                                (state['session_id'] and state['session_id'] != native_id)):
-                            raise ValueError('Native DSH resumed an unexpected session or worktree')
-                        save_session(worktree_path, agent_id, native_id, state_root=state_root,
-                                     native_process=native_process)
-                        if slot is not None and state['session_id'] is None:
-                            register_researcher(slot, agent_id, worktree_path, native_id)
+                        state['rotation_count'], transition = accept_session_event(projected,
+                            worktree=worktree_path, agent_id=agent_id, state_root=state_root,
+                            previous=state['session_id'], initial_resume=resume_session_id,
+                            rotation_count=state['rotation_count'], slot=slot, native_process=native_process)
+                        if transition is not None:
+                            log_file.write(json.dumps(transition) + '\n')
                         state['session_id'] = handle.session_id = native_id
                     elif state['session_id'] is None:
                         raise ValueError('Native DSH output arrived before its session identity')

@@ -1,10 +1,8 @@
 """Compact evidence projection regressions for both advisory review stages.
 
-The model-side prompts carry deterministic bounded views of the evidence store
-and catalog; original span/passage text stays host-side. These tests pin the
-volume bound, the absence of source originals from both prompts, and the fact
-that host-side validation still resolves references the model never saw as
-text. All content is synthetic fixture data, never scientific evidence.
+Stage one carries bounded summaries; stage two additionally supplies exact
+originals in a reference catalog. Host-side validation binds every reference
+to its paper. All content is synthetic fixture data, never scientific evidence.
 """
 import json
 import unittest
@@ -14,7 +12,7 @@ from sage.autonomous.novelty import (FEEDBACK_VERSION, advice_targets, feedback_
 from sage.autonomous.review import (AXES, RUBRIC_VERSION, canonical_json, evidence_view,
                                     review_prompt, source_scope, validate_review)
 
-# Distinctive span/passage originals that must never appear in any prompt.
+# Distinctive originals for checking each stage's evidence boundary.
 SPAN_ORIGINAL = 'IMMUTABLE_SPAN_ORIGINAL_SENTENCE_QUOTED_FOR_PROJECTION_TEST.'
 P1_SPAN_ORIGINAL = 'P1_ONLY_ORIGINAL_SENTENCE_NEVER_TRANSMITTED_TO_STAGE_TWO.'
 P2_SPAN_ORIGINAL = 'P2_CLOSEST_ORIGINAL_SENTENCE_ALLOWED_IN_STAGE_TWO.'
@@ -75,6 +73,27 @@ def fixture_review(document):
 
 
 class StageOneEvidenceProjectionTests(unittest.TestCase):
+    def test_metadata_scope_does_not_hide_card_source_or_partial_reading(self):
+        evidence = bulky_evidence(paper_count=1, spans_per_paper=1)
+        evidence['papers']['p1']['evidence_scope'] = 'abstract_only'
+        evidence['cards']['p1']['source_scope'] = 'arxiv_html'
+        coverage = {'available_chunks': 12, 'read_chunks': 3, 'partial_document': True}
+        evidence['cards']['p1']['coverage'] = coverage
+        paper = evidence_view(evidence)['papers']['p1']
+        self.assertEqual(paper['metadata_evidence_scope'], 'abstract_only')
+        self.assertEqual(paper['source_scope'], 'arxiv_html')
+        self.assertEqual(paper['reading_scope'], coverage)
+        self.assertNotIn('evidence_scope', paper)
+        document = review_document(['p1'])
+        stage_one = review_prompt(document, evidence)
+        stage_two = feedback_prompt(document, evidence, fixture_review(document))
+        for prompt in (stage_one, stage_two):
+            self.assertIn('"source_scope":"arxiv_html"', prompt)
+            self.assertIn('"metadata_evidence_scope":"abstract_only"', prompt)
+            self.assertNotIn('never transmitted', prompt)
+        self.assertNotIn(SPAN_ORIGINAL, stage_one)
+        self.assertIn(SPAN_ORIGINAL, stage_two)
+
     def test_evidence_section_is_compact_never_serializes_source_originals(self):
         evidence = bulky_evidence()
         prompt = review_prompt(review_document(sorted(evidence['papers'])), evidence)
