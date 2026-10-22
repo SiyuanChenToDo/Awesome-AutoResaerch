@@ -442,7 +442,10 @@ class RealOwnerLossTests(unittest.TestCase):
                 self.assertTrue((root / 'restart-refused.json').exists())
                 self.assertFalse((root / 'work-forbidden').exists())
                 receipt = json.loads((root / 'runtime-crash.json').read_text())
-                self.assertEqual(receipt['reason'], 'owner_missing')
+                # The guard can observe SIGKILL before this parent reaps the PID.
+                # Both states mean the same verified owner has stopped; cleanup
+                # and unrelated-process assertions below remain mandatory.
+                self.assertIn(receipt['reason'], {'owner_missing', 'owner_zombie'})
                 self.assertEqual(receipt['launcher_exit_cause'], 'unknown')
                 self.assertTrue(receipt['cleanup']['verified_no_active_tracked_dependents'], receipt)
                 self.assertFalse(receipt['manager_exit_observed'])
