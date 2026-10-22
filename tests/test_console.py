@@ -1,6 +1,8 @@
 """Local HTTP and lifecycle tests; no scientific/model execution."""
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import threading
@@ -36,11 +38,38 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(s['counts']['formal_completed'], 0)
 
     def test_native_completed_status_is_shown_without_claiming_scientific_acceptance(self):
-        self.put('result.json', {'workflow_status': 'completed_autonomous_conjectures'})
+        grade = {'evaluation_status': 'completed', 'primary_sha256': 'a'*64, 'review_id': 'review-2'}
+        self.put('service-private/evidence.json', {'grades': [grade]})
+        self.put('result.json', {'workflow_status': 'completed_autonomous_conjectures', 'selected_grade': grade})
         summary = self.store.summary('fixture')
         self.assertEqual(summary['status'], 'completed')
         self.assertEqual(summary['stage'], 'export')
         self.assertFalse(summary['independent_acceptance'])
+
+    def test_reported_completion_requires_matching_completed_grade(self):
+        for grade in ({'score': 0.9}, {'evaluation_status': 'completed', 'primary_sha256': 'wrong', 'review_id': 'review-2'}):
+            with self.subTest(grade=grade):
+                self.put('service-private/evidence.json', {'grades': [grade]})
+                self.put('result.json', {'workflow_status': 'completed_autonomous_conjectures', 'selected_grade': {
+                    'evaluation_status': 'completed', 'primary_sha256': 'a'*64, 'review_id': 'review-2'}})
+                summary = self.store.summary('fixture')
+                self.assertEqual(summary['status'], 'historical_unverified')
+                self.assertNotEqual(summary['stage'], 'export')
+                self.assertFalse(summary['independent_acceptance'])
+
+    def test_runs_sort_by_actual_start_with_unknown_dates_last(self):
+        for ident, started in [('z-old', '2025-01-01T00:00:00Z'), ('a-new', '2026-01-01T09:00:00+08:00'),
+                               ('b-middle', '2026-01-01T00:30:00Z'), ('invalid', 'invalid')]:
+            run = self.root / ident
+            run.mkdir()
+            (run / 'launch.json').write_text(json.dumps({'started': started}))
+        self.store.control.mkdir()
+        (self.store.control / 'console-newest.json').write_text(json.dumps({'started': '2026-02-01T00:00:00Z'}))
+        self.assertEqual(self.store.run_ids(), ['console-newest', 'a-new', 'b-middle', 'z-old', 'invalid', 'fixture'])
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js required for browser request lifecycle tests')
+    def test_browser_selection_and_stale_responses(self):
+        subprocess.run([shutil.which('node'), str(Path(__file__).with_name('console_client.test.js'))], check=True, timeout=30)
 
     def test_researcher_advisory_does_not_advance_synthesis_stage(self):
         self.put('service-private/evidence.json', {'reviews': [{'grading': False, 'research_slot': 2}]})

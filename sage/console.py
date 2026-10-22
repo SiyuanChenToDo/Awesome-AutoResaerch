@@ -110,7 +110,18 @@ class RunStore:
         if self.control.is_dir():
             for file in self.control.glob('console-*.json'):
                 found.add(file.stem)
-        return sorted(found, reverse=True)
+        def start_key(ident):
+            launch, _ = self.read(self.path(ident) / 'launch.json')
+            request, _ = self.read(self.control / (ident + '.json')) if '/' not in ident else ({}, None)
+            started = launch.get('started') or request.get('started')
+            try:
+                stamp = datetime.fromisoformat(started.replace('Z', '+00:00'))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                return stamp.timestamp(), ident
+            except (AttributeError, TypeError, ValueError, OverflowError):
+                return float('-inf'), ident
+        return sorted(found, key=start_key, reverse=True)
 
     def summary(self, ident):
         run = self.path(ident)
@@ -122,13 +133,18 @@ class RunStore:
         child = self.children.get(ident)
         running = child.poll() is None if child else process_alive(launch.get('launcher_identity'))
         final = bool(result)
-        complete = result.get('workflow_status') == 'completed_autonomous_conjectures'
-        status = ('completed' if complete else 'incomplete') if final else (
+        reported_complete = result.get('workflow_status') == 'completed_autonomous_conjectures'
+        grades = evidence.get('grades', [])
+        selected = result.get('selected_grade', {})
+        complete = reported_complete and selected.get('evaluation_status') == 'completed' and any(
+            g.get('evaluation_status') == 'completed' and g.get('primary_sha256') and
+            g.get('primary_sha256') == selected.get('primary_sha256') and
+            g.get('review_id') == selected.get('review_id') for g in grades)
+        status = ('completed' if complete else 'historical_unverified' if reported_complete else 'incomplete') if final else (
             'running' if running else 'interrupted' if running is False else
             'launch_failed' if request.get('returncode') is not None else 'unknown')
         rounds = team.get('rounds', {})
         reviews = evidence.get('reviews', [])
-        grades = evidence.get('grades', [])
         counts = {'papers': len(evidence.get('papers', {})), 'cards': len(evidence.get('cards', {})),
             'searches': len(evidence.get('searches', [])),
             'proposals': len(team.get('proposals', {})),

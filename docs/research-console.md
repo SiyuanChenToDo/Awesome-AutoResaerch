@@ -19,7 +19,7 @@ commit either credential. Model configuration remains in the server environment.
 On your own computer:
 
 ```bash
-ssh -N -L 8765:127.0.0.1:8765 -p 12066 root@connect.westb.seetacloud.com
+ssh -N -L 8765:127.0.0.1:8765 -p SSH_PORT root@SSH_HOST
 ```
 
 Open the printed `http://127.0.0.1:8765/#token=...` URL. The page removes the token
@@ -43,6 +43,12 @@ artifact downloads. The stage bar shows the latest observed stage, not a percent
 complete. The event view is explicitly a recent 200-event tail. Complete logs
 remain on disk. Missing, malformed or pending snapshots are not called success.
 Team synthesis completion is distinct from completed formal grading/export.
+History is ordered by the recorded start time, with unavailable times last.
+The selected run is remembered within the browser tab. Switching runs or views
+invalidates outstanding requests and clears the previous content immediately.
+An older result that reports completion without a matching, explicitly completed
+grade is labeled "历史运行报告完成 / 未独立核验". This label does not alter its files;
+even a matching complete grade does not establish independent scientific acceptance.
 
 This entry point produces conjectures and experiment protocols. It does not
 implement the general experiment-to-paper bridge. Same-family model reviews are
