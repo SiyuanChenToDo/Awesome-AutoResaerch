@@ -141,3 +141,13 @@ editorial text still requires human review. Such a reading aid only accompanies 
 matching final export, never another historical synthesis. It is visibly labelled,
 retains full originals beneath each section, and cannot change grades or research
 artifacts. There is no automatic paid summarization request.
+
+Readable prose resolves each candidate's variable/endpoint references to its own
+protocol definitions (for example, a variable's full metric name). Versions, URL
+paths and source handles are not rewritten. An optional `term_names` map in that
+candidate's private reading aid may translate these names; the API only accepts
+IDs present in that candidate's variables/endpoints. Ambiguous duplicate IDs are
+not silently assigned a meaning. All substitutions affect display copies only.
+The main view hides protocol codes in expandable originals and a code/name glossary.
+The default Markdown export contains readable prose; a separate full export appends
+the original protocol with its exact identifiers and fields for scientific review.

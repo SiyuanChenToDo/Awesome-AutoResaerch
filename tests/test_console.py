@@ -81,16 +81,18 @@ class ConsoleTests(unittest.TestCase):
         subprocess.run([shutil.which('node'), str(Path(__file__).with_name('reading.test.js'))], check=True, timeout=30)
 
     def test_editorial_reading_is_bound_to_export_and_existing_fields(self):
-        self.put('conjectures.json', {'candidates': [{'id': 'C1', 'problem': 'Synthetic question'}]})
+        self.put('conjectures.json', {'candidates': [{'id': 'C1', 'problem': 'Synthetic question',
+            'protocol': {'variables': [{'id': 'V4', 'definition': 'Synthetic metric'}]}}]})
         (self.run / 'presentation').mkdir()
         reading = {'schema_version': 'sage.proposal-reading.v1',
             'primary_sha256': hashlib.sha256((self.run / 'conjectures.json').read_bytes()).hexdigest(),
-            'candidates': {'C1': {'sections': {
+            'candidates': {'C1': {'term_names': {'V4': 'Synthetic label', 'V99': 'Unknown ID'}, 'sections': {
                 'motivation': {'text': 'Synthetic reading aid', 'source_fields': ['problem']},
                 'method': {'text': 'No source field', 'source_fields': ['invented']}}}}}
         self.put('presentation/proposal-reading.json', reading)
         data = self.store.section('fixture', 'overview')['data']['reading']
         self.assertEqual(list(data['C1']['sections']), ['motivation'])
+        self.assertEqual(data['C1']['term_names'], {'V4': 'Synthetic label'})
         self.put('conjectures.json', {'candidates': [{'id': 'C1', 'problem': 'Changed question'}]})
         self.assertEqual(self.store.section('fixture', 'overview')['data']['reading'], {})
 

@@ -24,10 +24,10 @@
     }
     out.append(n('p',String(v??'未提供')));return out;
   }
-  function field(f){
+  function field(f,original=false){
     const box=n('div',undefined,'reading-field');box.append(n('h4',f.label));
     if(f.key==='endpoints'&&Array.isArray(f.value)){
-      const primary=f.value.filter(x=>x.role==='primary'),other=f.value.filter(x=>x.role!=='primary');
+      const primary=f.value.filter(x=>['primary','主要评价项'].includes(x.role)),other=f.value.filter(x=>!['primary','主要评价项'].includes(x.role));
       if(primary.length)box.append(value(primary));else box.append(n('p','终点表未明确标记 primary，请核对协议指定的主终点。','reading-missing'));
       if(other.length)box.append(details('次要、探索性与其他终点 · '+other.length,value(other)));
     }else if(f.key==='variables')box.append(details('查看变量定义与编码',value(f.value)));
@@ -35,25 +35,27 @@
       const first=R.lead(f.value);box.append(n('p',first,'reading-lead'));
       if(first!==f.value)box.append(details('阅读完整论述',value(f.value)));
     }else box.append(value(f.value));
-    box.append(n('small','来源：'+f.path,'reading-source'));return box;
+    if(original)box.append(n('small','来源：'+f.path,'reading-source'));return box;
   }
-  function download(view,context){
-    const a=n('a');const url=URL.createObjectURL(new Blob([R.markdown(view,context)],{type:'text/markdown;charset=utf-8'}));
-    a.href=url;a.download=`proposal-${R.cleanId(view.id)}.md`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  function download(view,context,includeOriginal=false){
+    const a=n('a');const url=URL.createObjectURL(new Blob([R.markdown(view,context,{includeOriginal})],{type:'text/markdown;charset=utf-8'}));
+    a.href=url;a.download=`proposal-${R.cleanId(view.id)}${includeOriginal?'-with-protocol':''}.md`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   let serial=0;
   function proposal(candidate,doc={},context={}){
     const view=R.proposal(candidate,doc,context.reading||{}),prefix='proposal-'+(++serial)+'-',article=n('article',undefined,'card proposal');
     const top=n('header');top.append(n('span',`${view.id||'候选'} · RESEARCH PROPOSAL`,'id'),n('span',view.status,'badge'));article.append(top,n('h2',view.title));
-    const tools=n('div',undefined,'reading-toolbar');const save=n('button','下载 Proposal · Markdown');save.onclick=()=>download(view,context);tools.append(save,n('span','研究提案 · 实验状态请见运行记录','subtle'));article.append(tools);
+    const tools=n('div',undefined,'reading-toolbar');const save=n('button','下载易读版 Proposal');save.onclick=()=>download(view,context);const full=n('button','下载含原始协议的完整版本');full.onclick=()=>download(view,context,true);tools.append(save,full,n('span','研究提案 · 实验状态请见运行记录','subtle'));article.append(tools);
     const story=n('section',undefined,'proposal-story');story.append(n('h3','故事线速览'),n('p','以下摘取各部分的开头，完整设计与判据见下文。','section-note'));
     for(const [i,s] of view.story.entries()){const key=['motivation','method','experiment'][i],brief=view.sections.find(x=>x.id===key)?.editorial;const item=n('div');item.append(n('b',s.label),n('p',brief?R.lead(brief.text):s.text||'原稿未单列，待补充。'));story.append(item);}article.append(story);
     const nav=n('nav',undefined,'proposal-nav');nav.setAttribute('aria-label','Proposal 章节');
     for(const s of view.sections){const a=n('a',s.title.replace(/^\d+ · /,''));a.href='#'+prefix+s.id;nav.append(a);}article.append(nav);
+    if(view.terms.length)article.append(details('协议编号与术语对照（核查时展开）',value(view.terms.map(t=>({'协议编号':t.id,'类别':t.kind,'名称':t.name,'原文定义':t.definition})))));
     for(const s of view.sections){const body=n('section',undefined,'proposal-section');body.id=prefix+s.id;body.append(n('h3',s.title));if(s.hint)body.append(n('p',s.hint,'section-note'));
       const originals=n('div');
-      if(s.fields.length)s.fields.forEach(f=>originals.append(field(f)));else originals.append(n('p','原稿未单列，待补充。','reading-missing'));
-      if(s.editorial){const brief=n('div',undefined,'reading-editorial');brief.append(n('p','中文阅读整理 · 依据现有稿件','reading-source'),value(s.editorial.text));body.append(brief,details('核对完整原稿与协议字段',originals));}else body.append(originals);
+      if(s.fields.length)s.fields.forEach(f=>originals.append(field(f,true)));else originals.append(n('p','原稿未单列，待补充。','reading-missing'));
+      if(s.editorial){const brief=n('div',undefined,'reading-editorial');brief.append(n('p','中文阅读整理 · 依据现有稿件','reading-source'),value(s.editorial.text));body.append(brief);}else if(s.readableFields.length)s.readableFields.forEach(f=>body.append(field(f)));else body.append(n('p','原稿未单列，待补充。','reading-missing'));
+      body.append(details('核对完整原稿与协议编号',originals));
       if(s.secondary){const d=details(s.title,body);d.className='proposal-supplement';article.append(d);}else article.append(body);
     }
     article.append(details('核对原始候选 JSON',n('pre',JSON.stringify(candidate,null,2))));return article;

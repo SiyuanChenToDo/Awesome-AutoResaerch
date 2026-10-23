@@ -24,6 +24,42 @@
     // A complete opening sentence, explicitly labelled as an excerpt (never a generated summary).
     return v.match(/^.*?[。！？](?:\s|$)/s)?.[0]?.trim() || v.match(/^.*?[.!?](?=\s+[A-Z]|$)/s)?.[0]?.trim() || v;
   }
+  function glossary(c,reading={}){
+    const terms=[];
+    for(const [key,kind] of [['variables','变量'],['endpoints','评价项']]){
+      for(const item of Array.isArray(c.protocol?.[key])?c.protocol[key]:[]){
+        if(!item||typeof item.id!=='string'||typeof item.definition!=='string')continue;
+        const name=reading.term_names?.[item.id];
+        terms.push({id:item.id,kind,definition:item.definition,name:typeof name==='string'&&name.trim()?name:item.definition});
+      }
+    }
+    return terms;
+  }
+  function expand(text,terms){
+    // Exact, candidate-local references only. Do not rewrite versions, identifiers or URL/path tokens.
+    if(typeof text!=='string')return text;
+    return text.replace(/\S+/g,chunk=>{
+      const compound=/^[([]?[VE]\d+[a-z]?(?:[/\-][VE]\d+[a-z]?)+[)\],.;:]?$/.test(chunk);
+      if(!compound&&(/https?:|[\/\\]|\.(?:json|md|pdf|csv)\b/.test(chunk)))return chunk;
+      return chunk.replace(/\b[VE]\d+[a-z]?\b/g,token=>{
+        const matches=terms.filter(t=>t.id===token);
+        return matches.length===1?'「'+matches[0].name+'」':token;
+      });
+    });
+  }
+  function readable(value,terms,key=''){
+    if(['source_ids','source_spans','source_sha256','primary_sha256','parent_sha256','proposal_sha256','source_url','origin','schema_version','novelty_queries'].includes(key))return value;
+    if(Array.isArray(value))return value.map(v=>readable(v,terms,key));
+    if(value&&typeof value==='object'){
+      const out={};for(const [k,v]of Object.entries(value)){
+        if(k==='id'&&terms.some(t=>t.id===v)){out['名称']=expand(v,terms);continue;}
+        const label={primary_endpoint_ids:'主要评价项',variable_ids:'涉及的变量',endpoint_ids:'涉及的评价项'}[k]||k;
+        out[label]=readable(v,terms,k);
+      }return out;
+    }
+    if(key==='role')return {primary:'主要评价项',secondary:'次要评价项',exploratory:'探索性评价项'}[value]||value;
+    return expand(value,terms);
+  }
   function proposal(c,doc={},reading={}){
     const sections=[],used=new Set(['id','title']);
     const add=(id,title,hint,keys,extra=[])=>{
@@ -51,9 +87,11 @@
     if(present(rest))sections.push({id:'metadata',title:'版本、处置与补充记录',secondary:true,fields:[{label:'原始附加字段',path:'candidate',value:rest}]});
     const shared=['shared_protocol','shared_scientific_context'].filter(k=>present(doc[k])).map(k=>({key:k,label:names[k],path:k,value:doc[k]}));
     if(shared.length)sections.push({id:'shared',title:'共同实验约定',hint:'下列内容适用于整份候选文档；保留原文，不自动覆盖候选自己的协议。',fields:shared,secondary:true});
-    for(const s of sections){const part=reading.sections?.[s.id];if(part&&typeof part.text==='string')s.editorial=part;}
-    return {id:c.id,title:c.title||c.hypothesis||'未命名候选',status:c.disposition||c.status||'未提供',sections,
-      story:[['研究缺口',c.problem||c.motivation],['核心思路',c.mechanism||c.method||c.hypothesis],['验证路径',protocol.hypothesis?.contrast||c.estimand||c.falsification]].map(([label,v])=>({label,text:lead(v)})),raw:c};
+    const terms=glossary(c,reading);
+    for(const s of sections){const part=reading.sections?.[s.id];if(part&&typeof part.text==='string')s.editorial={...part,text:expand(part.text,terms)};
+      s.readableFields=s.fields.map(f=>({...f,label:f.key==='primary_endpoint_ids'?'主要评价项':f.label,value:readable(f.value,terms,f.key)}));}
+    return {id:c.id,title:c.title||c.hypothesis||'未命名候选',status:c.disposition||c.status||'未提供',sections,terms,
+      story:[['研究缺口',c.problem||c.motivation],['核心思路',c.mechanism||c.method||c.hypothesis],['验证路径',protocol.hypothesis?.contrast||c.estimand||c.falsification]].map(([label,v])=>({label,text:expand(lead(v),terms)})),raw:c};
   }
   const categories=[['problem','研究问题'],['motivation','研究动机'],['method','方法与算法'],['data','实验数据'],['baselines','对比方法'],['metrics','评价指标'],['results','文献报告结果'],['assumptions','成立条件'],['limitations','局限'],['reproducibility','复现信息'],['future_work','后续研究']];
   function evidence(card){
@@ -70,11 +108,13 @@
     if(value&&typeof value==='object')return Object.entries(value).map(([k,v])=>`${'#'.repeat(Math.min(level+4,6))} ${names[k]||k}\n\n${lines(v,level+1)}`).join('\n\n');
     return String(value??'未提供');
   }
-  function markdown(view,context={}){
-    return `# ${view.title}\n\n候选：${view.id} · 状态：${view.status}\n\n运行：${context.run||'未提供'}\n版本：${context.version||'当前所选文档'}\n\n本文件是已有科学字段的结构化阅读版，不新增科学结论。未提供的内容保留缺口；计划中的实验不代表已执行。\n\n`+
-      view.sections.map(s=>`## ${s.title}\n\n${s.hint||''}\n\n`+(s.editorial?`### 中文阅读整理（非新增研究结果）\n\n${s.editorial.text}\n\n整理依据：${s.editorial.source_fields.join(', ')}\n\n`:'')+(s.fields.length?s.fields.map(f=>`### ${f.label}\n\n${lines(f.value)}\n\n来源字段：${f.path}`).join('\n\n'):'原稿未单列，待补充。')).join('\n\n');
+  function markdown(view,context={},options={}){
+    const header=`# ${view.title}\n\n候选：${view.id} · 状态：${view.status}\n\n运行：${context.run||'未提供'}\n版本：${context.version||'当前所选文档'}\n\n本文件是已有科学字段的结构化阅读版，不新增科学结论。未提供的内容保留缺口；计划中的实验不代表已执行。整理文字用于阅读，完整判定条件以平台原稿为准。\n\n`;
+    const body=view.sections.map(s=>`## ${s.title}\n\n${s.hint||''}\n\n`+(s.editorial?s.editorial.text:s.readableFields.length?s.readableFields.map(f=>`### ${f.label}\n\n${lines(f.value)}`).join('\n\n'):'原稿未单列，待补充。')).join('\n\n');
+    const appendix=options.includeOriginal?'\n\n# 原稿与协议编号（核对附录）\n\n'+view.sections.map(s=>`## ${s.title}\n\n`+s.fields.map(f=>`### ${f.label}\n\n${lines(f.value)}\n\n来源字段：${f.path}`).join('\n\n')).join('\n\n'):'';
+    return header+body+appendix;
   }
-  const api={proposal,evidence,markdown,names,present,lead,cleanId};
+  const api={proposal,evidence,markdown,names,present,lead,cleanId,glossary,expand,readable};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.SageReading=api;
 })(globalThis);

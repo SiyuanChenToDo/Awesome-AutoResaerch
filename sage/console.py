@@ -220,7 +220,15 @@ class RunStore:
                         any(not isinstance(k, str) or k not in candidates[ident] for k in refs)):
                     continue
                 accepted[key] = {'text': part['text'], 'source_fields': refs}
-            result[ident] = {'sections': accepted}
+            protocol = candidates[ident].get('protocol', {})
+            known = set()
+            if isinstance(protocol, dict):
+                for key in ('variables', 'endpoints'):
+                    if isinstance(protocol.get(key), list):
+                        known.update(x['id'] for x in protocol[key] if isinstance(x, dict) and isinstance(x.get('id'), str))
+            names = item.get('term_names', {})
+            names = {k: v for k, v in names.items() if k in known and isinstance(v, str) and 0 < len(v.strip()) <= 200} if isinstance(names, dict) else {}
+            result[ident] = {'sections': accepted, 'term_names': names}
         return result
 
     def section(self, ident, section):
