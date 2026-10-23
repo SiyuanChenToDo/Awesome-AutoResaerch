@@ -407,7 +407,9 @@ class RealOwnerLossTests(unittest.TestCase):
         try:
             current = lifecycle.process_identity(record['pid'])
             return current['start_ticks'] == record['start_ticks'] and current['state'] != 'Z'
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # /proc can disappear before open (ENOENT) or during read (ESRCH).
+            # Neither is an active process; permissions/other errors still fail.
             return False
 
     def run_loss(self, mode):

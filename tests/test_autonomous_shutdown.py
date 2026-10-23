@@ -211,7 +211,10 @@ class RealNativeShutdownTests(unittest.TestCase):
                 'def stop(*args):\n time.sleep(0.25)\n sys.exit(0)\n'
                 'signal.signal(signal.SIGTERM,stop)\n'
                 f'child=subprocess.Popen([sys.executable,{str(child_script)!r}],start_new_session=True)\n'
-                f'open({str(marker)!r},"w").write(json.dumps({{"pid":child.pid}}))\n'
+                # Publish a complete marker: existence alone does not mean a
+                # freshly opened file has received its JSON bytes yet.
+                f'with open({str(marker)+".tmp"!r},"w") as f: f.write(json.dumps({{"pid":child.pid}}))\n'
+                f'os.replace({str(marker)+".tmp"!r},{str(marker)!r})\n'
                 'time.sleep(60)\n')
             manager = subprocess.Popen([sys.executable, str(manager_script)], start_new_session=True)
             unrelated = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(60)'], start_new_session=True)
