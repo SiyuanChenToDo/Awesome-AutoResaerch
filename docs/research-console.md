@@ -111,3 +111,33 @@ Candidate results use the available width when only one is present; the selected
 candidate view uses full-width cards. Account styles are scoped to account pages,
 and consent checkboxes have intrinsic width with adjacent labels. These changes
 do not alter scientific artifacts or strengthen completion/acceptance claims.
+
+## Structured proposal and evidence reading
+
+The default research view presents each selected candidate as a proposal: motivation
+and gap; hypothesis and proposed contribution; algorithm/implementation; main
+experiment and endpoints; baselines and ablations; analysis and falsification;
+resources, risks and boundaries; sources. A short opening-sentence overview and
+chapter links help readers follow the story. Original fields, unknown future fields,
+shared definitions and full protocol remain accessible. Missing sections are marked
+as missing, never completed with invented results. Primary/secondary endpoint roles
+remain the roles recorded in the protocol. A Markdown reading export includes all
+mapped fields and the shared context; original scientific downloads are unchanged.
+
+Evidence cards group actual claims by problem, motivation, method, data, baselines,
+metrics, reported results, assumptions, limitations and reproducibility. Every claim
+keeps its model support verdict and expandable exact source spans. Unsupported and
+uncertain claims remain visible. Search includes evidence-card content. This is a
+reading projection, not an independent verification or experimental replication.
+
+An optional privately stored `presentation/proposal-reading.json` in a run may provide
+an editorial Chinese reading aid with schema `sage.proposal-reading.v1`, the exact
+`primary_sha256` of `conjectures.json`, and `candidates` keyed by candidate ID. Each
+item has `sections` keyed by `motivation`, `hypothesis`, `method`, `experiment`,
+`baselines`, `decisions`, `feasibility`, or `sources`; each section has `text` and
+`source_fields` listing existing candidate fields. The API suppresses stale hashes
+and invalid references. These references establish provenance, not semantic truth;
+editorial text still requires human review. Such a reading aid only accompanies the
+matching final export, never another historical synthesis. It is visibly labelled,
+retains full originals beneath each section, and cannot change grades or research
+artifacts. There is no automatic paid summarization request.

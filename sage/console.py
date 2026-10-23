@@ -186,6 +186,43 @@ class RunStore:
             'source_unchanged': result.get('framework_unchanged_during_run'),
             'exit_code': child.poll() if child else request.get('returncode')}
 
+    def proposal_reading(self, ident, final):
+        """Optional editorial reading aid, bound to exact export bytes; never a grade."""
+        reading, error = self.read(self.path(ident) / 'presentation' / 'proposal-reading.json')
+        if error or reading.get('schema_version') != 'sage.proposal-reading.v1':
+            return {}
+        try:
+            raw = self.artifact(ident, 'conjectures.json')
+            if (hashlib.sha256(raw).hexdigest() != reading.get('primary_sha256') or
+                    json.loads(raw) != final):
+                return {}
+        except (OSError, ValueError):
+            return {}
+        candidates = {c.get('id'): c for c in final.get('candidates', [])}
+        result = {}
+        items = reading.get('candidates', {})
+        if not isinstance(items, dict):
+            return {}
+        for ident, item in items.items():
+            if ident not in candidates or not isinstance(item, dict):
+                continue
+            sections = item.get('sections', {})
+            if not isinstance(sections, dict):
+                continue
+            accepted = {}
+            for key, part in sections.items():
+                if key not in ('motivation', 'hypothesis', 'method', 'experiment', 'baselines', 'decisions', 'feasibility', 'sources'):
+                    continue
+                if not isinstance(part, dict) or not isinstance(part.get('text'), str):
+                    continue
+                refs = part.get('source_fields', [])
+                if (not isinstance(refs, list) or not refs or
+                        any(not isinstance(k, str) or k not in candidates[ident] for k in refs)):
+                    continue
+                accepted[key] = {'text': part['text'], 'source_fields': refs}
+            result[ident] = {'sections': accepted}
+        return result
+
     def section(self, ident, section):
         run = self.path(ident)
         if section == 'summary':
@@ -198,6 +235,7 @@ class RunStore:
         if section in ('candidates', 'overview'):
             final, error = self.read(run / 'conjectures.json')
             return {'data': {'exported': final, 'export_error': error,
+                'reading': self.proposal_reading(ident, final) if not error else {},
                 'syntheses': team.get('syntheses', []), 'proposals': team.get('proposals', {})}, 'error': te}
         if section == 'evidence':
             return {'data': {k: evidence.get(k, {}) for k in ('papers', 'cards')}, 'error': ee}
@@ -323,9 +361,12 @@ def handler_class(store, token):
 
         def do_GET(self):
             parsed = urlsplit(self.path)
-            if parsed.path in ('/', '/app.js', '/style.css', '/planner.js', '/planner-ui.js', '/planner.css'):
+            if parsed.path in ('/', '/app.js', '/style.css', '/planner.js', '/planner-ui.js', '/planner.css', '/reading.js', '/reading-ui.js', '/reading.css'):
                 name, content_type = {'/': ('index.html', 'text/html; charset=utf-8'),
                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+                    '/reading.js': ('reading.js', 'text/javascript; charset=utf-8'),
+                    '/reading-ui.js': ('reading-ui.js', 'text/javascript; charset=utf-8'),
+                    '/reading.css': ('reading.css', 'text/css; charset=utf-8'),
                     '/planner.js': ('planner.js', 'text/javascript; charset=utf-8'),
                     '/planner.css': ('planner.css', 'text/css; charset=utf-8'),
                     '/planner-ui.js': ('planner-ui.js', 'text/javascript; charset=utf-8'),

@@ -1,5 +1,6 @@
 """Local HTTP and lifecycle tests; no scientific/model execution."""
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -74,6 +75,24 @@ class ConsoleTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'Node.js required for planning interaction tests')
     def test_optional_research_planning(self):
         subprocess.run([shutil.which('node'), str(Path(__file__).with_name('planner.test.js'))], check=True, timeout=30)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js required for reading view tests')
+    def test_structured_proposal_and_evidence_reading(self):
+        subprocess.run([shutil.which('node'), str(Path(__file__).with_name('reading.test.js'))], check=True, timeout=30)
+
+    def test_editorial_reading_is_bound_to_export_and_existing_fields(self):
+        self.put('conjectures.json', {'candidates': [{'id': 'C1', 'problem': 'Synthetic question'}]})
+        (self.run / 'presentation').mkdir()
+        reading = {'schema_version': 'sage.proposal-reading.v1',
+            'primary_sha256': hashlib.sha256((self.run / 'conjectures.json').read_bytes()).hexdigest(),
+            'candidates': {'C1': {'sections': {
+                'motivation': {'text': 'Synthetic reading aid', 'source_fields': ['problem']},
+                'method': {'text': 'No source field', 'source_fields': ['invented']}}}}}
+        self.put('presentation/proposal-reading.json', reading)
+        data = self.store.section('fixture', 'overview')['data']['reading']
+        self.assertEqual(list(data['C1']['sections']), ['motivation'])
+        self.put('conjectures.json', {'candidates': [{'id': 'C1', 'problem': 'Changed question'}]})
+        self.assertEqual(self.store.section('fixture', 'overview')['data']['reading'], {})
 
     def test_researcher_advisory_does_not_advance_synthesis_stage(self):
         self.put('service-private/evidence.json', {'reviews': [{'grading': False, 'research_slot': 2}]})

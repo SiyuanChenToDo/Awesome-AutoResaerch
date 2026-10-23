@@ -180,7 +180,7 @@ def handler(state):
                     return self.send(page.encode(), mime='text/html; charset=utf-8')
                 if parsed.path == '/app.js':
                     return self.send((state.static/'app.js').read_bytes(), mime='text/javascript; charset=utf-8')
-                if parsed.path in ('/style.css', '/planner.js', '/planner-ui.js', '/planner.css'):
+                if parsed.path in ('/style.css', '/planner.js', '/planner-ui.js', '/planner.css', '/reading.js', '/reading-ui.js', '/reading.css'):
                     mime = 'text/css; charset=utf-8' if parsed.path.endswith('.css') else 'text/javascript; charset=utf-8'
                     return self.send((state.static/parsed.path[1:]).read_bytes(), mime=mime)
                 if parsed.path == '/api/runs':
