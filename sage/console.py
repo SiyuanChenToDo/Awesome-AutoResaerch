@@ -323,9 +323,12 @@ def handler_class(store, token):
 
         def do_GET(self):
             parsed = urlsplit(self.path)
-            if parsed.path in ('/', '/app.js', '/style.css'):
+            if parsed.path in ('/', '/app.js', '/style.css', '/planner.js', '/planner-ui.js', '/planner.css'):
                 name, content_type = {'/': ('index.html', 'text/html; charset=utf-8'),
                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+                    '/planner.js': ('planner.js', 'text/javascript; charset=utf-8'),
+                    '/planner.css': ('planner.css', 'text/css; charset=utf-8'),
+                    '/planner-ui.js': ('planner-ui.js', 'text/javascript; charset=utf-8'),
                     '/style.css': ('style.css', 'text/css; charset=utf-8')}[parsed.path]
                 return self.send((STATIC / name).read_bytes(), content_type=content_type)
             if not self.authorized():

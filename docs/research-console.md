@@ -2,7 +2,8 @@
 
 The console is part of SAGE, uses the existing autonomous runner and reads its
 run directories. It has no database and does not edit scientific artifacts.
-The supported remote deployment is loopback HTTP on AutoDL plus an SSH tunnel.
+Single-owner deployment uses loopback HTTP plus an SSH tunnel. For an
+authenticated group website with an HTTPS entry point, see [team deployment](team-console.md).
 
 On AutoDL, in the same configured environment used for `sage autonomous`:
 
@@ -73,3 +74,40 @@ grading and exposes omissions before submission, without model calls or formal
 attempt consumption. It does not bypass the final exact-byte grader check or
 weaken the two-advisory-lineage/current-version requirements. Invalid scientific
 claims and incomplete evidence remain visible; no historical output is rewritten.
+
+## Optional research planning interview
+
+The new-research screen offers a local, optional conversation before the final
+Topic and budget form. Start from a rough direction, write a Topic directly, or
+leave the direction blank and choose free exploration. The guided route asks one
+question at a time, with four concrete options and a free-text field; a custom
+answer needs no selected option. Questions cover contribution type, focus,
+materials, resources, falsification/evaluation, and scope. The focus and validation
+branches differ for mechanism, method, evaluation and open exploration goals.
+
+Users can go back, skip any question, or finish early. Changing the contribution
+type clears dependent focus/validation answers; independent decisions survive.
+Unanswered questions remain open, and named materials are not represented as
+already read. The assembled Topic is editable, preserves the user's stated
+preferences and uncertainties, and is passed unchanged through the existing
+RunStore to the autonomous controller. It is visible in that run's original
+input. Nothing starts until the user confirms live-call consent and submits the
+budget form. The experimental-resource question does not change the live idea
+generation budget.
+
+This interview uses authored question branches, not a model interviewer. It
+makes no API calls. A versioned draft is stored in the current tab's sessionStorage
+and can be downloaded as `research-plan.json`. Refresh preserves answers and
+manual Topic edits; a successful launch or team logout clears the local draft.
+Downloaded drafts can contain unpublished ideas and should be shared deliberately.
+
+Interaction inspiration: [RobMitt/grill-me-skill](https://github.com/RobMitt/grill-me-skill),
+reviewed on 2026-10-23. SAGE adapts sequential questioning, concrete choices and
+decision summaries into an optional research-specific flow. Question text and
+implementation are original; the upstream skill is neither installed nor executed.
+Unlike an exhaustive interview, all decisions can remain explicitly unresolved.
+
+Candidate results use the available width when only one is present; the selected
+candidate view uses full-width cards. Account styles are scoped to account pages,
+and consent checkboxes have intrinsic width with adjacent labels. These changes
+do not alter scientific artifacts or strengthen completion/acceptance claims.

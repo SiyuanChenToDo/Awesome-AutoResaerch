@@ -71,6 +71,10 @@ class ConsoleTests(unittest.TestCase):
     def test_browser_selection_and_stale_responses(self):
         subprocess.run([shutil.which('node'), str(Path(__file__).with_name('console_client.test.js'))], check=True, timeout=30)
 
+    @unittest.skipUnless(shutil.which('node'), 'Node.js required for planning interaction tests')
+    def test_optional_research_planning(self):
+        subprocess.run([shutil.which('node'), str(Path(__file__).with_name('planner.test.js'))], check=True, timeout=30)
+
     def test_researcher_advisory_does_not_advance_synthesis_stage(self):
         self.put('service-private/evidence.json', {'reviews': [{'grading': False, 'research_slot': 2}]})
         self.assertEqual(self.store.summary('fixture')['stage'], 'discovery')

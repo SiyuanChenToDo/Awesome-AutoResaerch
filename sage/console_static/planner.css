@@ -1,0 +1,29 @@
+/* Optional research interview and compact outcome layout. */
+.checkbox {justify-content:flex-start;align-items:center;gap:10px;max-width:100%}
+.checkbox input[type=checkbox] {appearance:auto;width:17px;height:17px;flex:0 0 17px;margin:0;padding:0;accent-color:var(--accent)}
+.checkbox span {line-height:1.6}
+.card-grid.selected-candidates,.card-grid.single-candidate {grid-template-columns:minmax(0,1fr)}
+.outcome-summary {padding:18px 22px}
+.outcome-summary h2 {margin-bottom:6px}
+.outcome-summary p {margin:6px 0}
+.outcome-summary .notice {margin:12px 0;padding:9px 12px}
+.outcome-summary .section-note {margin-bottom:0}
+.selected-candidates .card p {margin:10px 0}
+.planner {padding:24px;max-width:100%}
+.planner h2 {font-size:23px;line-height:1.5;margin:10px 0}
+.planner h2:focus {outline:none}
+.planner-context {margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:var(--accent);max-height:100px;overflow:auto}
+.planner-options {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0}
+.planner-option {text-align:left;padding:16px;white-space:normal;line-height:1.6;background:#fff;border:1px solid var(--line)}
+.planner-option strong {display:block;margin-bottom:4px}
+.planner-option span {display:block;color:var(--muted);font-size:12px}
+.planner-option[aria-pressed=true] {border-color:var(--accent);background:var(--pale);box-shadow:inset 0 0 0 1px var(--accent)}
+.planner-actions {display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:18px 0 8px}
+.planner-actions button {white-space:normal}
+.planner-finish {margin-left:auto}
+.planner-recap {padding:10px 13px;background:var(--pale);border-radius:6px;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.planner-review {border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:20px}
+.planner-review h2 {margin-bottom:6px}
+.planner-error {color:#a24837;font-size:12px;margin:8px 0}
+.planner button:focus-visible, .planner-review button:focus-visible {outline:3px solid #93b7a0;outline-offset:3px}
+@media(max-width:680px){.planner-options{grid-template-columns:1fr}.planner{padding:18px}.planner h2{font-size:20px}.planner-finish{margin-left:0}.form-bottom{flex-wrap:wrap}.form-bottom #start{width:100%}.outcome-summary{padding:16px}}
