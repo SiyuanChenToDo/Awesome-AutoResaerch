@@ -92,6 +92,22 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(self.request('/api/run?id=real-run&section=evidence',cookie=cookie)[0],200)
         self.store.section.assert_called_once_with('real-run','evidence')
 
+    def test_live_planning_requires_auth_csrf_and_config_and_never_starts_research(self):
+        body={'request_id':'interview_request_123','seed':'topic','turns':[],'allow_live':True}
+        self.state.planner=Mock()
+        self.state.planner.step.return_value={'question':{'title':'dynamic question','options':[]},'usage':{}}
+        self.assertEqual(self.request('/api/planning/next',body)[0],401)
+        cookie,csrf,_=self.login('member')
+        self.assertEqual(self.request('/api/planning/next',body,cookie=cookie)[0],403)
+        self.assertEqual(self.request('/api/planning/next',body,cookie=cookie,csrf=csrf)[0],400)
+        self.state.planner.step.assert_not_called()
+        self.store.allow_live=True
+        status,_,data=self.request('/api/planning/next',body,cookie=cookie,csrf=csrf)
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(data)['question']['title'],'dynamic question')
+        self.state.planner.step.assert_called_once_with('member',body)
+        self.store.start.assert_not_called()
+
     def test_planning_assets_and_settings_preserve_auth_and_do_not_launch(self):
         cookie,_,_=self.login('member')
         status,_,page=self.request('/',cookie=cookie)

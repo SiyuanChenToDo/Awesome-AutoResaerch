@@ -77,33 +77,46 @@ claims and incomplete evidence remain visible; no historical output is rewritten
 
 ## Optional research planning interview
 
-The new-research screen offers a local, optional conversation before the final
-Topic and budget form. Start from a rough direction, write a Topic directly, or
-leave the direction blank and choose free exploration. The guided route asks one
-question at a time, with four concrete options and a free-text field; a custom
-answer needs no selected option. Questions cover contribution type, focus,
-materials, resources, falsification/evaluation, and scope. The focus and validation
-branches differ for mechanism, method, evaluation and open exploration goals.
+The new-research screen offers an optional **live model interview** before the
+final Topic and research budget form. The configured provider receives the Topic
+and full question/answer history on each explicit next click. It generates one
+context-sensitive question, its reason, zero to four relevant options, and a brief
+interpretation of the current direction. There is no authored question/option bank.
+Users can answer freely, choose an option, skip, revise a previous answer, or finish
+at any time. Changing an earlier answer regenerates dependent questions; a changed
+Topic resets the conversation. Empty topics can be explored, or users can bypass
+all model calls and start free exploration directly.
 
-Users can go back, skip any question, or finish early. Changing the contribution
-type clears dependent focus/validation answers; independent decisions survive.
-Unanswered questions remain open, and named materials are not represented as
-already read. The assembled Topic is editable, preserves the user's stated
-preferences and uncertainties, and is passed unchanged through the existing
-RunStore to the autonomous controller. It is visible in that run's original
-input. Nothing starts until the user confirms live-call consent and submits the
-budget form. The experimental-resource question does not change the live idea
-generation budget.
+Clicking “开始模型追问” explicitly opts into transmitting the Topic and subsequent
+answers to the configured model and paying for those calls. This does not launch
+research. The final editable Topic preserves the exact user answers; the model's
+interpretation is shown separately and is not silently promoted into user decisions.
+The existing consent and budget form remains the only research start action.
 
-This interview uses authored question branches, not a model interviewer. It
-makes no API calls. A versioned draft is stored in the current tab's sessionStorage
-and can be downloaded as `research-plan.json`. Refresh preserves answers and
-manual Topic edits; a successful launch or team logout clears the local draft.
-Downloaded drafts can contain unpublished ideas and should be shared deliberately.
+`POST /api/planning/next` uses the existing member session, pinned origin and CSRF
+checks (or the local console bearer token). The shared `sage/planning.py` controller
+uses `OpenAIModel`, validates inputs and generated JSON, closes its client, and has
+no research tool or launch capability. Each request has one attempt, up to 2000
+output tokens and an 85-second outer timeout. Each interview permits 12 questions;
+per gateway process there are at most 30 attempts/account/hour, 120 total/hour and
+two simultaneous requests, with only one per account. Failures consume the budget;
+there are no automatic retries or fallback scripted questions. Request IDs dedupe
+completed requests for one hour (bounded 128-entry cache); in-flight duplicates
+are rejected without another model call. These are process-local limits, reset on
+service restart, not a persistent currency cap. Token usage is recorded separately
+from research launches. Provider errors are sanitized and answers remain editable.
+
+A versioned draft remains in the tab's sessionStorage and can be downloaded as
+`research-plan.json`. Refresh never automatically sends a paid call; an interrupted
+request can be explicitly resumed using the same request ID. Finishing while a call
+is pending ignores the late reply, although the already-issued request may still
+be billed. Successful research launch or team logout clears the local draft.
+Old drafts preserve seed and manually edited final Topic but do not reuse scripted
+question branches. Downloaded drafts can contain unpublished ideas.
 
 Interaction inspiration: [RobMitt/grill-me-skill](https://github.com/RobMitt/grill-me-skill),
 reviewed on 2026-10-23. SAGE adapts sequential questioning, concrete choices and
-decision summaries into an optional research-specific flow. Question text and
+decision summaries into an optional research-specific flow. The interview prompt and
 implementation are original; the upstream skill is neither installed nor executed.
 Unlike an exhaustive interview, all decisions can remain explicitly unresolved.
 

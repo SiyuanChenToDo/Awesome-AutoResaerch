@@ -343,6 +343,8 @@ class RunStore:
 
 
 def handler_class(store, token):
+    from .planning import Planner, PlanningError
+    planner = Planner()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass  # Tokens and user inputs never enter an access log.
@@ -399,7 +401,7 @@ def handler_class(store, token):
         def do_POST(self):
             if not self.authorized():
                 return self.send({'error': 'Unauthorized'}, 401)
-            if self.path != '/api/runs':
+            if self.path not in ('/api/runs', '/api/planning/next'):
                 return self.send({'error': 'Not found'}, 404)
             try:
                 size = int(self.headers.get('Content-Length', '0'))
@@ -408,6 +410,13 @@ def handler_class(store, token):
                 args = json.loads(self.rfile.read(size))
                 if not isinstance(args, dict):
                     raise ValueError('Request must be an object')
+                if self.path == '/api/planning/next':
+                    if not store.allow_live:
+                        raise ValueError('当前只读入口不能调用模型，请使用已配置模型的团队平台')
+                    try:
+                        return self.send(planner.step('local', args))
+                    except PlanningError as exc:
+                        return self.send({'error': str(exc)}, exc.status)
                 return self.send(store.start(args), 201)
             except (ValueError, OSError) as exc:
                 return self.send({'error': str(exc) if isinstance(exc, ValueError) else type(exc).__name__}, 400)

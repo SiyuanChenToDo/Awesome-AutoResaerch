@@ -15,6 +15,7 @@ import secrets
 import sys
 import threading
 import time
+from .planning import Planner, PlanningError
 from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).with_name('team_console_static')
@@ -46,6 +47,7 @@ class State:
         self.lock = threading.RLock()
         self.dummy = password_hash(secrets.token_urlsafe(32))
         self.origin = ''
+        self.planner = Planner()
         self.config_path = self.directory / 'provider.json'
         if self.config_path.exists():
             self.install_provider(json.loads(self.config_path.read_text())['key'])
@@ -229,6 +231,15 @@ def handler(state):
             try:
                 obj = self.read_body()
                 username = session['username']
+                if path == '/api/planning/next':
+                    if not state.store.allow_live:
+                        raise ValueError('请管理员先在账号与模型设置中配置模型密钥')
+                    try:
+                        result = state.planner.step(username, obj)
+                    except PlanningError as exc:
+                        return self.send({'error':str(exc)}, exc.status)
+                    state.audit('planning_question',username,usage=result.get('usage',{}))
+                    return self.send(result)
                 if path == '/auth/logout':
                     with state.lock:
                         state.sessions.pop(session['digest'],None)
